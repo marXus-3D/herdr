@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
@@ -31,7 +31,7 @@ pub fn render_git_sidebar(
     let block = Block::default()
         .borders(Borders::LEFT)
         .title(repo_title)
-        .style(Style::default().fg(p.sidebar_fg).bg(p.sidebar_bg));
+        .style(Style::default().fg(p.text).bg(p.sidebar_bg));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -49,7 +49,7 @@ pub fn render_git_sidebar(
     let input_text = if state.commit_message.is_empty() {
         Span::styled("Message (Enter to commit)", Style::default().fg(p.overlay0).bg(input_bg))
     } else {
-        Span::styled(&state.commit_message, Style::default().bg(input_bg).fg(p.sidebar_fg))
+        Span::styled(&state.commit_message, Style::default().bg(input_bg).fg(p.text))
     };
     let input_block = Paragraph::new(input_text).block(Block::default().borders(Borders::ALL).style(Style::default().fg(p.surface_dim)));
     frame.render_widget(input_block, changes_chunks[0]);
@@ -78,7 +78,7 @@ pub fn render_git_sidebar(
                 changes_items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(format!("{} ", status_str), Style::default().fg(p.green).bg(bg)),
-                    Span::styled(path_str.into_owned(), Style::default().bg(bg).fg(p.sidebar_fg)),
+                    Span::styled(path_str.into_owned(), Style::default().bg(bg).fg(p.text)),
                 ])).style(Style::default().bg(bg)));
                 idx += 1;
             }
@@ -106,7 +106,7 @@ pub fn render_git_sidebar(
                 changes_items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(format!("{} ", status_str), Style::default().fg(p.yellow).bg(bg)),
-                    Span::styled(path_str.into_owned(), Style::default().bg(bg).fg(p.sidebar_fg)),
+                    Span::styled(path_str.into_owned(), Style::default().bg(bg).fg(p.text)),
                 ])).style(Style::default().bg(bg)));
                 idx += 1;
             }
@@ -145,7 +145,7 @@ pub fn render_git_sidebar(
                     Span::raw(" "),
                     Span::styled(commit.hash.clone(), Style::default().fg(p.yellow).bg(bg)),
                     Span::raw(" "),
-                    Span::styled(commit.subject.clone(), Style::default().bg(bg).fg(p.sidebar_fg)),
+                    Span::styled(commit.subject.clone(), Style::default().bg(bg).fg(p.text)),
                 ])).style(Style::default().bg(bg)));
                 idx += 1;
             }
@@ -183,14 +183,14 @@ pub fn render_git_sidebar_collapsed(
         let text_x = area.x + 1;
         let text_y = area.y + 1;
         buf[(text_x, text_y)].set_symbol("S");
-        buf[(text_x, text_y)].set_style(Style::default().fg(p.sidebar_fg));
+        buf[(text_x, text_y)].set_style(Style::default().fg(p.text));
         buf[(text_x, text_y + 1)].set_symbol("C");
-        buf[(text_x, text_y + 1)].set_style(Style::default().fg(p.sidebar_fg));
+        buf[(text_x, text_y + 1)].set_style(Style::default().fg(p.text));
     }
 }
 
 pub fn render_git_sidebar_toggle(
-    app: &AppState,
+    _app: &AppState,
     frame: &mut Frame,
     area: Rect,
     collapsed: bool,
