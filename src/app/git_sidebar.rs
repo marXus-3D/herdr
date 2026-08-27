@@ -83,7 +83,7 @@ impl GitSidebarState {
                 .output();
 
             let log_cmd = std::process::Command::new("git")
-                .args(&["log", "-n", "50", "--graph", "--pretty=format:%h|%s|%an|%cr", "--abbrev-commit"])
+                .args(&["--no-pager", "log", "-n", "50", "--graph", "--pretty=format:%h|%s|%an|%cr", "--abbrev-commit"])
                 .current_dir(&cwd)
                 .output();
 
@@ -154,7 +154,7 @@ impl GitSidebarState {
             }
 
             let mut branch = String::new();
-            if let Ok(b) = std::process::Command::new("git").args(&["branch", "--show-current"]).current_dir(&cwd).output() {
+            if let Ok(b) = std::process::Command::new("git").args(&["--no-pager", "branch", "--show-current"]).current_dir(&cwd).output() {
                 branch = String::from_utf8_lossy(&b.stdout).trim().to_string();
             }
             let repo_name = cwd.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();

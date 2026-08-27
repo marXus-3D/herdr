@@ -37,7 +37,16 @@ pub fn render_git_sidebar(
     frame.render_widget(block, area);
 
     // Two sections: changes (staged/unstaged) + commit, and commit graphs.
-    let (changes_area, _divider_y, commits_area) = split_git_sidebar_sections(inner_area);
+    let (changes_area, divider_y, commits_area) = split_git_sidebar_sections(inner_area);
+
+    if let Some(y) = divider_y {
+        let sep_style = Style::default().fg(p.surface_dim);
+        let buf = frame.buffer_mut();
+        for x in inner_area.x..inner_area.x + inner_area.width {
+            buf[(x, y)].set_symbol("─");
+            buf[(x, y)].set_style(sep_style);
+        }
+    }
 
     let changes_chunks = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(changes_area);
 
