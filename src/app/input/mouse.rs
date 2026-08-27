@@ -655,7 +655,7 @@ impl AppState {
                     
                     // Check if clicked the commit box
                     if mouse.row >= git_sidebar.y + 1 && mouse.row < git_sidebar.y + 1 + 3 {
-                        self.state.git_sidebar_state.selected_index = 0;
+                        self.git_sidebar_state.selected_index = 0;
                         self.mode = Mode::GitSidebar;
                         return None;
                     }
@@ -672,7 +672,7 @@ impl AppState {
                         if !self.git_sidebar_state.section_collapsed_staged {
                             for (i, file) in self.git_sidebar_state.staged_files.clone().iter().enumerate() {
                                 if !handled && mouse.row == current_y {
-                                    self.state.git_sidebar_state.selected_index = 1 + i;
+                                    self.git_sidebar_state.selected_index = 1 + i;
                                     self.mode = Mode::GitSidebar;
                                     return Some(MouseAction::GitSidebarDiff(file.path.clone()));
                                 }
@@ -690,7 +690,7 @@ impl AppState {
                         if !self.git_sidebar_state.section_collapsed_changes {
                             for (i, file) in self.git_sidebar_state.unstaged_files.clone().iter().enumerate() {
                                 if !handled && mouse.row == current_y {
-                                    self.state.git_sidebar_state.selected_index = 1 + self.git_sidebar_state.staged_files.len() + i;
+                                    self.git_sidebar_state.selected_index = 1 + self.git_sidebar_state.staged_files.len() + i;
                                     self.mode = Mode::GitSidebar;
                                     return Some(MouseAction::GitSidebarDiff(file.path.clone()));
                                 }

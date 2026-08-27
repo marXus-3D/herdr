@@ -610,6 +610,7 @@ impl App {
             view: state::ViewState {
                 layout: state::ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
+                git_sidebar_rect: ratatui::layout::Rect::default(),
                 workspace_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
@@ -1980,6 +1981,9 @@ impl App {
             }
             Mode::Navigator => {
                 input::handle_navigator_key(&mut self.state, &self.terminal_runtimes, key_event);
+            }
+            Mode::GitSidebar => {
+                self.handle_git_sidebar_key(key_event);
             }
             Mode::Terminal => {
                 // Should not be called in terminal mode.

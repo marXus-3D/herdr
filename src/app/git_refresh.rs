@@ -548,7 +548,7 @@ impl App {
             return;
         }
         
-        let Some(ws) = self.state.active_workspace() else { return; };
+        let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) else { return; };
         let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) else { return; };
 
         // FIXME: we should track the last refresh time for git_sidebar to avoid spamming
@@ -562,7 +562,7 @@ impl App {
     }
 
     pub(crate) fn run_git_sidebar_action(&mut self, cmd: &str, path: &std::path::Path) -> std::io::Result<()> {
-        let Some(ws) = self.state.active_workspace() else { return Ok(()) };
+        let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) else { return Ok(()) };
         let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) else { return Ok(()) };
         
         let mut command = std::process::Command::new("git");

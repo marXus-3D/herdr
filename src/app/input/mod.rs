@@ -423,7 +423,7 @@ impl App {
                         let _ = self.run_git_sidebar_action("restore", &path);
                     }
                     MouseAction::GitSidebarDiff(path) => {
-                        if let Some(ws) = self.state.active_workspace() {
+                        if let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) {
                             if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
                                 let cmd = format!("git diff {}", path.to_string_lossy());
                                 let _ = self.spawn_popup_shell_command(&cmd, Some(cwd), vec![], crate::app::popup::PopupGeometry::default());
@@ -1148,7 +1148,7 @@ impl crate::app::App {
                 if self.state.git_sidebar_state.selected_index == 0 {
                     if !self.state.git_sidebar_state.commit_message.is_empty() {
                         let mut cmd = std::process::Command::new("git");
-                        if let Some(ws) = self.state.active_workspace() {
+                        if let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) {
                             if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
                                 cmd.current_dir(cwd);
                                 cmd.arg("commit").arg("-m").arg(self.state.git_sidebar_state.commit_message.clone());
@@ -1177,7 +1177,7 @@ impl crate::app::App {
                         }
                     }
                     if let Some(path) = path_to_diff {
-                        if let Some(ws) = self.state.active_workspace() {
+                        if let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) {
                             if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
                                 // Show git diff in a popup pane
                                 let cmd = format!("git diff {}", path.to_string_lossy());
