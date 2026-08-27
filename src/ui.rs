@@ -501,6 +501,7 @@ fn render_navigation_chrome(
             } else {
                 crate::ui::git_sidebar::render_git_sidebar(app, terminal_runtimes, frame, app.view.git_sidebar_rect);
             }
+            crate::ui::git_sidebar::render_git_sidebar_toggle(app, frame, app.view.git_sidebar_rect, app.git_sidebar_closed, &app.palette);
         }
     }
 }

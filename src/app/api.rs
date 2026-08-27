@@ -60,11 +60,13 @@ impl App {
 
     pub(crate) fn handle_internal_event_with_render_impact(&mut self, ev: AppEvent) -> bool {
         match ev {
-            AppEvent::GitSidebarRefreshComplete { staged, unstaged, commits, error } => {
+            AppEvent::GitSidebarRefreshComplete { staged, unstaged, commits, error, branch, repo_name } => {
                 self.state.git_sidebar_state.staged_files = staged;
                 self.state.git_sidebar_state.unstaged_files = unstaged;
                 self.state.git_sidebar_state.recent_commits = commits;
                 self.state.git_sidebar_state.error_message = error;
+                self.state.git_sidebar_state.branch = branch;
+                self.state.git_sidebar_state.repo_name = repo_name;
                 self.state.git_sidebar_state.is_refreshing = false;
                 true
             }

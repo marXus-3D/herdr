@@ -14,7 +14,10 @@ pub struct GitSidebarState {
     pub scroll_changes: usize,
     pub scroll_graph: usize,
     pub is_refreshing: bool,
+    pub needs_force_refresh: bool,
     pub error_message: Option<String>,
+    pub repo_name: String,
+    pub branch: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,11 +128,19 @@ impl GitSidebarState {
                 }
             }
 
+            let mut branch = String::new();
+            if let Ok(b) = std::process::Command::new("git").args(&["branch", "--show-current"]).current_dir(&cwd).output() {
+                branch = String::from_utf8_lossy(&b.stdout).trim().to_string();
+            }
+            let repo_name = cwd.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+
             let _ = event_tx.blocking_send(crate::events::AppEvent::GitSidebarRefreshComplete {
                 staged,
                 unstaged,
                 commits,
                 error,
+                branch,
+                repo_name,
             });
         });
     }

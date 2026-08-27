@@ -67,6 +67,8 @@ pub enum AppEvent {
         unstaged: Vec<crate::app::git_sidebar::GitFileStatus>,
         commits: Vec<crate::app::git_sidebar::GitCommitGraphEntry>,
         error: Option<String>,
+        branch: String,
+        repo_name: String,
     },
     /// Fallback detector state changed in a pane.
     StateChanged {

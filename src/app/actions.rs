@@ -1135,6 +1135,7 @@ impl AppState {
                 crate::logging::tab_focused(&workspace_id, &tab_id);
             }
             self.tab_scroll_follow_active = true;
+            self.git_sidebar_state.needs_force_refresh = true;
             self.refresh_tab_bar_view();
             self.record_pane_focus_after_navigation(previous_focus);
             self.sync_selection_after_focus_navigation();

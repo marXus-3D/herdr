@@ -543,6 +543,20 @@ impl AppState {
                         self.sidebar_collapsed = !self.sidebar_collapsed;
                         return None;
                     }
+                }
+
+                if self.on_git_sidebar_toggle(mouse.column, mouse.row) {
+                    self.git_sidebar_closed = !self.git_sidebar_closed;
+                    if !self.git_sidebar_closed {
+                        self.mode = Mode::GitSidebar;
+                        self.git_sidebar_state.is_refreshing = false;
+                    } else if self.mode == Mode::GitSidebar {
+                        self.mode = Mode::Terminal;
+                    }
+                    return None;
+                }
+
+                if in_sidebar {
 
                     if self.sidebar_collapsed {
                         if let Some(idx) = self.collapsed_workspace_at_row(mouse.row) {

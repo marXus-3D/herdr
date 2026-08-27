@@ -1131,7 +1131,7 @@ impl Default for UiConfig {
             git_sidebar_min_width: 22,
             git_sidebar_max_width: 50,
             git_sidebar_start_closed: false,
-            git_sidebar_collapsed_mode: SidebarCollapsedModeConfig::Hidden,
+            git_sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
             git_sidebar_escape_to_dismiss: true,
             mobile_width_threshold: DEFAULT_MOBILE_WIDTH_THRESHOLD,
             mouse_capture: true,

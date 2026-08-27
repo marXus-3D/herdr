@@ -553,9 +553,11 @@ impl App {
 
         // FIXME: we should track the last refresh time for git_sidebar to avoid spamming
         // For now we just tie it to git_refresh_deadline which runs roughly every 3-10s
-        let Some(deadline) = self.git_refresh_deadline() else { return; };
-        if now < deadline { return; }
+        let force = self.state.git_sidebar_state.needs_force_refresh;
+        let deadline_passed = self.git_refresh_deadline().map_or(false, |d| now >= d);
+        if !force && !deadline_passed { return; }
 
+        self.state.git_sidebar_state.needs_force_refresh = false;
         self.state.git_sidebar_state.is_refreshing = true;
         let tx = self.event_tx.clone();
         crate::app::git_sidebar::GitSidebarState::spawn_refresh(cwd, tx);

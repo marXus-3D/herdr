@@ -264,6 +264,19 @@ impl AppState {
             && row < rect.y + rect.height
     }
 
+    pub(super) fn on_git_sidebar_toggle(&self, col: u16, row: u16) -> bool {
+        let rect = if self.git_sidebar_closed {
+            crate::ui::git_sidebar::collapsed_git_sidebar_toggle_rect(self.view.git_sidebar_rect)
+        } else {
+            crate::ui::git_sidebar::expanded_git_sidebar_toggle_rect(self.view.git_sidebar_rect)
+        };
+        rect.width > 0
+            && col >= rect.x
+            && col < rect.x + rect.width
+            && row >= rect.y
+            && row < rect.y + rect.height
+    }
+
     pub(super) fn set_manual_sidebar_width(&mut self, divider_col: u16) {
         let sidebar = self.view.sidebar_rect;
         let width = divider_col.saturating_sub(sidebar.x).saturating_add(1);
