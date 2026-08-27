@@ -68,7 +68,7 @@ pub(crate) fn automatic_workspace_label(cwd: &Path, repo_root: &Path) -> String 
         .unwrap_or_else(|| fallback_label_from_cwd(cwd))
 }
 
-pub(super) fn git_space_metadata_from_info(info: &GitWorktreeInfo) -> GitSpaceMetadata {
+pub(crate) fn git_space_metadata_from_info(info: &GitWorktreeInfo) -> GitSpaceMetadata {
     let key = canonicalize_best_effort_path(&info.git_common_dir)
         .display()
         .to_string();

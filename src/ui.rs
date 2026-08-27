@@ -28,7 +28,8 @@ use self::dialogs::{
     render_open_existing_worktree_overlay, render_remove_worktree_overlay, render_rename_overlay,
 };
 use self::git_sidebar::{
-    compute_git_sidebar_row_areas, render_git_sidebar, render_git_sidebar_collapsed,
+    compute_git_sidebar_row_areas, render_git_menu, render_git_sidebar,
+    render_git_sidebar_collapsed,
 };
 use self::keybind_help::render_keybind_help_overlay;
 use self::menus::{
@@ -94,8 +95,10 @@ pub(crate) use self::{
 
 pub(crate) use self::{
     git_sidebar::{
-        collapsed_git_sidebar_toggle_rect, expanded_git_sidebar_toggle_rect, git_sidebar_layout,
-        git_sidebar_list_rect, git_sidebar_scroll_metrics, git_sidebar_scrollbar_rect,
+        collapsed_git_sidebar_toggle_rect, expanded_git_sidebar_toggle_rect, git_menu_contains,
+        git_menu_layout, git_menu_row_at, git_row_icon_rects, git_sidebar_button_rects,
+        git_sidebar_layout, git_sidebar_list_rect, git_sidebar_scroll_metrics,
+        git_sidebar_scrollbar_rect, GitRowIcon, GitSidebarButton,
     },
     keybind_help::keybind_help_lines,
     mobile::{
@@ -501,7 +504,7 @@ pub fn render_with_runtime_registry(
         Mode::GlobalMenu => render_global_launcher_menu(app, frame),
         Mode::KeybindHelp => render_keybind_help_overlay(app, frame),
         Mode::Navigator => render_navigator_overlay(app, terminal_runtimes, frame),
-        Mode::GitSidebar => {}
+        Mode::GitSidebar => render_git_menu(app, frame),
         Mode::Terminal => {}
     }
 }

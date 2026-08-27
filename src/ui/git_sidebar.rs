@@ -16,19 +16,31 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
 use super::scrollbar::{render_scrollbar, should_show_scrollbar};
 use super::text::{display_width, truncate_end};
+use super::widgets::panel_contrast_fg;
 use crate::app::git_sidebar::{
-    GitFileStatus, GitFileStatusKind, GitSection, GitSidebarFocus, GitSidebarRow, GitSidebarState,
+    GitFileStatus, GitFileStatusKind, GitMenuItem, GitMenuKind, GitMenuState, GitSection,
+    GitSidebarFocus, GitSidebarRow, GitSidebarState,
 };
 use crate::app::state::{GitSidebarRowArea, Palette};
 use crate::app::{AppState, Mode};
 use crate::pane::ScrollMetrics;
 
+/// Row of icon buttons under the branch line.
+const ACTION_BAR_ROWS: u16 = 1;
+/// Columns one action-bar button occupies, its leading space included.
+const BUTTON_WIDTH: u16 = 3;
+/// Columns one inline row icon occupies, its leading space included.
+const ROW_ICON_SLOT: u16 = 2;
+/// A file row only grows inline icons once this much is left for the name.
+const MIN_NAME_COLUMNS: u16 = 8;
+/// Width a dropdown wants; it may be wider when the panel itself is.
+const MENU_WIDTH: u16 = 46;
 /// Bordered single-line commit message box.
 const MESSAGE_BOX_ROWS: u16 = 3;
 /// Horizontal rule under the commit box.
@@ -51,6 +63,8 @@ pub(crate) struct GitSidebarLayout {
     pub title: Rect,
     /// Repository name, branch, and ahead/behind counts.
     pub meta: Rect,
+    /// Row of icon buttons: commit, pull, push, branch, stash, more.
+    pub actions: Rect,
     /// The bordered commit box, borders included.
     pub message_box: Rect,
     /// The single editable line inside the commit box.
@@ -99,6 +113,13 @@ pub(crate) fn git_sidebar_layout(area: Rect) -> GitSidebarLayout {
     } else {
         bottom
     };
+
+    // The buttons are worth more than the commit box in a squeezed panel: they
+    // are the only way to reach pull, push, and the dropdowns with the mouse.
+    if list_bottom.saturating_sub(y) >= ACTION_BAR_ROWS + 1 {
+        layout.actions = Rect::new(content.x, y, content.width, ACTION_BAR_ROWS);
+        y += ACTION_BAR_ROWS;
+    }
 
     if list_bottom.saturating_sub(y) >= MESSAGE_BOX_BUDGET {
         layout.message_box = Rect::new(content.x, y, content.width, MESSAGE_BOX_ROWS);
@@ -201,6 +222,209 @@ pub(crate) fn compute_git_sidebar_row_areas(
         .collect()
 }
 
+/// One button in the action bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitSidebarButton {
+    Commit,
+    Pull,
+    Push,
+    Branch,
+    Stash,
+    More,
+}
+
+impl GitSidebarButton {
+    fn icon(self) -> &'static str {
+        match self {
+            GitSidebarButton::Commit => "✓",
+            GitSidebarButton::Pull => "↓",
+            GitSidebarButton::Push => "↑",
+            GitSidebarButton::Branch => "⎇",
+            GitSidebarButton::Stash => "≡",
+            GitSidebarButton::More => "⋯",
+        }
+    }
+}
+
+/// Draw order of the action bar. Buttons drop off the right end first, so the
+/// commit and remote actions survive the narrowest panel.
+const GIT_SIDEBAR_BUTTONS: [GitSidebarButton; 6] = [
+    GitSidebarButton::Commit,
+    GitSidebarButton::Pull,
+    GitSidebarButton::Push,
+    GitSidebarButton::Branch,
+    GitSidebarButton::Stash,
+    GitSidebarButton::More,
+];
+
+/// One rect per action-bar button that fits, in draw order.
+///
+/// A pure function of the rect, so the renderer and mouse hit-testing cannot
+/// disagree about where a button is.
+pub(crate) fn git_sidebar_button_rects(actions: Rect) -> Vec<(GitSidebarButton, Rect)> {
+    if actions.width == 0 || actions.height == 0 {
+        return Vec::new();
+    }
+    let fits = (actions.width / BUTTON_WIDTH) as usize;
+    GIT_SIDEBAR_BUTTONS
+        .iter()
+        .take(fits)
+        .enumerate()
+        .map(|(index, button)| {
+            let x = actions.x + index as u16 * BUTTON_WIDTH;
+            (*button, Rect::new(x, actions.y, BUTTON_WIDTH, 1))
+        })
+        .collect()
+}
+
+/// An inline action on a file row, at its right-hand end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitRowIcon {
+    Stage,
+    Unstage,
+    /// Restore a tracked file, or delete an untracked one.
+    Discard,
+}
+
+impl GitRowIcon {
+    fn glyph(self) -> &'static str {
+        match self {
+            GitRowIcon::Stage => "+",
+            GitRowIcon::Unstage => "-",
+            GitRowIcon::Discard => "↺",
+        }
+    }
+
+    fn color(self, p: &Palette) -> Color {
+        match self {
+            GitRowIcon::Stage => p.green,
+            GitRowIcon::Unstage => p.yellow,
+            GitRowIcon::Discard => p.red,
+        }
+    }
+}
+
+/// The icons a group's rows carry, in draw order.
+fn git_row_icons(section: GitSection) -> &'static [GitRowIcon] {
+    match section {
+        // Staged rows only ever go back out of the index.
+        GitSection::Staged => &[GitRowIcon::Unstage],
+        GitSection::Changes | GitSection::Untracked => &[GitRowIcon::Discard, GitRowIcon::Stage],
+        // A conflicted path is resolved by staging it; discarding it is not a
+        // thing git offers here.
+        GitSection::Merge => &[GitRowIcon::Stage],
+        GitSection::Commits => &[],
+    }
+}
+
+/// Columns the inline icons take on a row of `width`, or `0` when there is not
+/// enough room left for the file name.
+fn git_row_icons_width(section: GitSection, width: u16) -> u16 {
+    let needed = git_row_icons(section).len() as u16 * ROW_ICON_SLOT;
+    if needed == 0 || width < needed + MIN_NAME_COLUMNS {
+        return 0;
+    }
+    needed
+}
+
+/// One rect per inline icon on a file row, in draw order.
+pub(crate) fn git_row_icon_rects(section: GitSection, rect: Rect) -> Vec<(GitRowIcon, Rect)> {
+    let width = git_row_icons_width(section, rect.width);
+    if width == 0 || rect.height == 0 {
+        return Vec::new();
+    }
+    let start = rect.x + rect.width - width;
+    git_row_icons(section)
+        .iter()
+        .enumerate()
+        .map(|(index, icon)| {
+            let x = start + index as u16 * ROW_ICON_SLOT;
+            (*icon, Rect::new(x, rect.y, ROW_ICON_SLOT, 1))
+        })
+        .collect()
+}
+
+/// Geometry of an open dropdown, anchored to the panel's right edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GitMenuLayout {
+    /// The whole box, borders included.
+    pub rect: Rect,
+    /// Filter line, `Rect::default()` for a menu that does not filter.
+    pub filter: Rect,
+    /// Scrolling item list.
+    pub list: Rect,
+}
+
+/// Place a dropdown over `area`, the source-control panel's rect.
+///
+/// A dropdown is wider than the panel and grows leftward over the terminal, but
+/// stays inside the panel's rows so it never covers the tab bar.
+pub(crate) fn git_menu_layout(area: Rect, menu: &GitMenuState) -> Option<GitMenuLayout> {
+    if area.width == 0 || area.height < 5 {
+        return None;
+    }
+    // Columns available from the screen's left edge to the panel's right edge.
+    let available = area.x + area.width;
+    let width = MENU_WIDTH.max(area.width).min(available);
+    if width < 8 {
+        return None;
+    }
+    let x = available - width;
+
+    let filter_rows = u16::from(menu.filterable);
+    let chrome = 2 + filter_rows;
+    let max_rows = area.height.saturating_sub(chrome);
+    if max_rows == 0 {
+        return None;
+    }
+    let rows = (menu.visible().len() as u16).clamp(1, max_rows);
+    let height = rows + chrome;
+
+    // Hang below the action bar, but never past the bottom of the panel.
+    let bottom = area.y + area.height;
+    let y = (area.y + 3).min(bottom.saturating_sub(height));
+    let rect = Rect::new(x, y, width, height);
+
+    let inner = Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+    let filter = if filter_rows == 1 {
+        Rect::new(inner.x, inner.y, inner.width, 1)
+    } else {
+        Rect::default()
+    };
+    let list = Rect::new(
+        inner.x,
+        inner.y + filter_rows,
+        inner.width,
+        inner.height - filter_rows,
+    );
+    Some(GitMenuLayout { rect, filter, list })
+}
+
+/// Whether `(col, row)` lands anywhere on the open dropdown.
+pub(crate) fn git_menu_contains(area: Rect, menu: &GitMenuState, col: u16, row: u16) -> bool {
+    let Some(layout) = git_menu_layout(area, menu) else {
+        return false;
+    };
+    let rect = layout.rect;
+    col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
+/// Visible-list index of the dropdown row at `(col, row)`.
+pub(crate) fn git_menu_row_at(
+    area: Rect,
+    menu: &GitMenuState,
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    let layout = git_menu_layout(area, menu)?;
+    let list = layout.list;
+    if col < list.x || col >= list.x + list.width || row < list.y || row >= list.y + list.height {
+        return None;
+    }
+    let index = (row - list.y) as usize + menu.scroll;
+    (index < menu.visible().len()).then_some(index)
+}
+
 /// The chevron that closes an expanded panel: bottom row, inner edge.
 pub(crate) fn expanded_git_sidebar_toggle_rect(area: Rect) -> Rect {
     if area.width <= 1 || area.height == 0 {
@@ -275,6 +499,7 @@ pub(super) fn render_git_sidebar(app: &AppState, frame: &mut Frame, area: Rect) 
 
     render_title(state, frame, layout.title, p);
     render_meta(state, frame, layout.meta, p);
+    render_action_bar(state, frame, layout.actions, p);
     render_message_box(app, frame, &layout, p, focused);
 
     if let Some(divider_y) = layout.divider_y {
@@ -365,6 +590,69 @@ fn render_meta(state: &GitSidebarState, frame: &mut Frame, rect: Rect, p: &Palet
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+
+    // A paused rebase/merge is the most important thing about the repository
+    // while it lasts, so it overwrites the right-hand end of this line.
+    if let Some(label) = state.operation_label() {
+        let width = display_width(label) as u16;
+        if rect.width > width {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    label,
+                    Style::default().fg(p.peach).add_modifier(Modifier::BOLD),
+                )),
+                Rect::new(rect.x + rect.width - width, rect.y, width, 1),
+            );
+        }
+    }
+}
+
+/// The icon buttons: commit, pull, push, and the three dropdowns.
+fn render_action_bar(state: &GitSidebarState, frame: &mut Frame, rect: Rect, p: &Palette) {
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+    let enabled = state.has_repo();
+    let open = state.menu.as_ref().map(|menu| menu.kind);
+
+    for (button, area) in git_sidebar_button_rects(rect) {
+        // A submenu keeps its parent button lit, so it stays obvious which
+        // dropdown the box hanging below belongs to.
+        let active = matches!(
+            (button, open),
+            (
+                GitSidebarButton::Branch,
+                Some(GitMenuKind::Branch | GitMenuKind::Branches(_))
+            ) | (
+                GitSidebarButton::Stash,
+                Some(GitMenuKind::Stash | GitMenuKind::StashEntry(_))
+            ) | (
+                GitSidebarButton::More,
+                Some(GitMenuKind::More | GitMenuKind::Commit(_))
+            )
+        );
+
+        let style = if active {
+            Style::default()
+                .bg(p.accent)
+                .fg(p.panel_bg)
+                .add_modifier(Modifier::BOLD)
+        } else if enabled {
+            Style::default().fg(p.subtext0)
+        } else {
+            Style::default().fg(p.overlay0).add_modifier(Modifier::DIM)
+        };
+
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(button.icon(), style),
+                Span::raw(" "),
+            ]))
+            .style(if active { style } else { Style::default() }),
+            area,
+        );
+    }
 }
 
 fn render_message_box(
@@ -378,8 +666,30 @@ fn render_message_box(
         return;
     }
     let state = &app.git_sidebar_state;
-    let editing = focused && state.focus == GitSidebarFocus::Message;
 
+    // A prompt takes the box over: same geometry, its own title and buffer.
+    if let Some(prompt) = &state.prompt {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(p.accent))
+            .title(Span::styled(
+                format!(" {} ", prompt.kind.label()),
+                Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
+            ));
+        frame.render_widget(block, layout.message_box);
+        render_single_line_input(
+            frame,
+            layout.message_input,
+            &prompt.input,
+            prompt.cursor_display_col(),
+            true,
+            "",
+            p,
+        );
+        return;
+    }
+
+    let editing = focused && state.focus == GitSidebarFocus::Message;
     let border_style = if editing {
         Style::default().fg(p.accent)
     } else {
@@ -389,35 +699,49 @@ fn render_message_box(
         Block::default().borders(Borders::ALL).style(border_style),
         layout.message_box,
     );
+    render_single_line_input(
+        frame,
+        layout.message_input,
+        &state.commit_message,
+        state.commit_cursor_display_col(),
+        editing,
+        "message (⏎ to commit)",
+        p,
+    );
+}
 
-    let input = layout.message_input;
-    if input.width == 0 {
+/// Draw one editable line, sliding the window so the caret stays on screen.
+fn render_single_line_input(
+    frame: &mut Frame,
+    input: Rect,
+    text: &str,
+    cursor_col: usize,
+    editing: bool,
+    placeholder: &str,
+    p: &Palette,
+) {
+    if input.width == 0 || input.height == 0 {
         return;
     }
     let visible = input.width as usize;
 
-    if state.commit_message.is_empty() && !editing {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                truncate_end("message (⏎ to commit)", visible),
-                Style::default().fg(p.overlay0).add_modifier(Modifier::DIM),
-            )),
-            input,
-        );
+    if text.is_empty() && !editing {
+        if !placeholder.is_empty() {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    truncate_end(placeholder, visible),
+                    Style::default().fg(p.overlay0).add_modifier(Modifier::DIM),
+                )),
+                input,
+            );
+        }
         return;
     }
 
-    // Slide the window so the caret stays on screen in a long message.
-    let cursor_col = state.commit_cursor_display_col();
     let scroll = cursor_col.saturating_sub(visible.saturating_sub(1));
-    let text: String = state
-        .commit_message
-        .chars()
-        .skip(scroll)
-        .take(visible)
-        .collect();
+    let window: String = text.chars().skip(scroll).take(visible).collect();
     frame.render_widget(
-        Paragraph::new(Span::styled(text, Style::default().fg(p.text))),
+        Paragraph::new(Span::styled(window, Style::default().fg(p.text))),
         input,
     );
 
@@ -456,7 +780,7 @@ fn render_rows(app: &AppState, frame: &mut Frame, list: Rect, p: &Palette, focus
                 section_header_line(state, section, area.rect.width, p)
             }
             GitSidebarRow::File { section, index } => match state.file_at(section, index) {
-                Some(file) => file_line(file, selected, area.rect.width, p),
+                Some(file) => file_line(file, section, selected, area.rect.width, p),
                 None => continue,
             },
             GitSidebarRow::Commit { index } => match state.commits.get(index) {
@@ -521,8 +845,18 @@ fn section_header_line(
     ])
 }
 
-/// `" M name  dir"` — status badge, file name, dimmed parent directory.
-fn file_line(file: &GitFileStatus, selected: bool, width: u16, p: &Palette) -> Line<'static> {
+/// `" M name  dir      ↺ +"` — status badge, file name, dimmed parent
+/// directory, then the inline stage/discard icons at the right-hand end.
+///
+/// The icons are laid out to land exactly where [`git_row_icon_rects`] says
+/// they are, so clicking one always hits what was drawn.
+fn file_line(
+    file: &GitFileStatus,
+    section: GitSection,
+    selected: bool,
+    width: u16,
+    p: &Palette,
+) -> Line<'static> {
     let name = file.file_name();
     let dir = file.parent_dir();
     let name_style = if selected {
@@ -531,9 +865,15 @@ fn file_line(file: &GitFileStatus, selected: bool, width: u16, p: &Palette) -> L
         Style::default().fg(p.subtext0)
     };
 
-    // " X " badge plus the name; the directory takes whatever is left.
+    let icons = git_row_icons(section);
+    let icons_width = usize::from(git_row_icons_width(section, width));
+
+    // " X " badge plus the name; the directory takes whatever is left over
+    // once the icon strip has been reserved.
     let prefix_width = 3;
-    let available = (width as usize).saturating_sub(prefix_width);
+    let available = (width as usize)
+        .saturating_sub(prefix_width)
+        .saturating_sub(icons_width);
     let name_budget = available.min(display_width(&name));
     let dir_budget = available
         .saturating_sub(name_budget)
@@ -549,13 +889,33 @@ fn file_line(file: &GitFileStatus, selected: bool, width: u16, p: &Palette) -> L
         Span::raw(" "),
         Span::styled(truncate_end(&name, name_budget), name_style),
     ];
+    let mut used = prefix_width + name_budget;
     if let Some(dir) = dir.filter(|_| dir_budget > 0) {
+        let dir = truncate_end(&dir, dir_budget);
+        used += 1 + display_width(&dir);
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
-            truncate_end(&dir, dir_budget),
+            dir,
             Style::default().fg(p.overlay0).add_modifier(Modifier::DIM),
         ));
     }
+
+    if icons_width > 0 {
+        let pad = (width as usize).saturating_sub(used + icons_width);
+        spans.push(Span::raw(" ".repeat(pad)));
+        for icon in icons {
+            // Dim until the cursor is on the row, the way VS Code only shows
+            // these on hover.
+            let style = if selected {
+                Style::default().fg(icon.color(p)).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(p.overlay0).add_modifier(Modifier::DIM)
+            };
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(icon.glyph(), style));
+        }
+    }
+
     Line::from(spans)
 }
 
@@ -661,6 +1021,174 @@ pub(super) fn render_git_sidebar_collapsed(app: &AppState, frame: &mut Frame, ar
     render_git_sidebar_toggle(frame, area, true, p);
 }
 
+/// Draw the open dropdown over the panel and the terminal to its left.
+pub(super) fn render_git_menu(app: &AppState, frame: &mut Frame) {
+    let Some(menu) = &app.git_sidebar_state.menu else {
+        return;
+    };
+    let Some(layout) = git_menu_layout(app.view.git_sidebar_rect, menu) else {
+        return;
+    };
+    let p = &app.palette;
+
+    frame.render_widget(Clear, layout.rect);
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(p.accent))
+            .style(Style::default().bg(p.panel_bg))
+            .title(Span::styled(
+                format!(" {} ", menu.title),
+                Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
+            )),
+        layout.rect,
+    );
+
+    if layout.filter.width > 1 {
+        let empty = menu.filter.is_empty();
+        let text = if empty {
+            "type to filter".to_string()
+        } else {
+            menu.filter.clone()
+        };
+        let style = if empty {
+            Style::default().fg(p.overlay0).add_modifier(Modifier::DIM)
+        } else {
+            Style::default().fg(p.text)
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(
+                    truncate_end(&text, layout.filter.width as usize - 1),
+                    style,
+                ),
+            ])),
+            layout.filter,
+        );
+    }
+
+    let visible = menu.visible();
+    let list = layout.list;
+    let viewport = list.height as usize;
+    let has_scrollbar = visible.len() > viewport && list.width > 2;
+    let body_width = if has_scrollbar {
+        list.width - 1
+    } else {
+        list.width
+    };
+
+    for (offset, item_index) in visible
+        .iter()
+        .skip(menu.scroll)
+        .take(viewport)
+        .copied()
+        .enumerate()
+    {
+        let rect = Rect::new(list.x, list.y + offset as u16, body_width, 1);
+        render_git_menu_item(
+            frame,
+            &menu.items[item_index],
+            rect,
+            menu.scroll + offset == menu.selected,
+            menu.armed == Some(item_index),
+            p,
+        );
+    }
+
+    if has_scrollbar {
+        let max_offset_from_bottom = visible.len() - viewport;
+        let metrics = ScrollMetrics {
+            offset_from_bottom: max_offset_from_bottom.saturating_sub(menu.scroll),
+            max_offset_from_bottom,
+            viewport_rows: viewport,
+        };
+        let track = Rect::new(list.x + list.width - 1, list.y, 1, list.height);
+        render_scrollbar(frame, metrics, track, p.surface_dim, p.overlay0, "▕");
+    }
+}
+
+fn render_git_menu_item(
+    frame: &mut Frame,
+    item: &GitMenuItem,
+    rect: Rect,
+    selected: bool,
+    armed: bool,
+    p: &Palette,
+) {
+    if rect.width == 0 {
+        return;
+    }
+
+    if !item.is_selectable() {
+        if item.label.is_empty() {
+            let buf = frame.buffer_mut();
+            for x in rect.x..rect.x + rect.width {
+                buf[(x, rect.y)].set_symbol("─");
+                buf[(x, rect.y)].set_style(Style::default().fg(p.surface_dim));
+            }
+        } else {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled(
+                        truncate_end(&item.label, (rect.width as usize).saturating_sub(1)),
+                        Style::default().fg(p.overlay0).add_modifier(Modifier::DIM),
+                    ),
+                ])),
+                rect,
+            );
+        }
+        return;
+    }
+
+    // One leading and one trailing space frame the row inside the border.
+    let inner = (rect.width as usize).saturating_sub(2);
+    let detail = item.detail.clone().unwrap_or_default();
+    let detail_budget = display_width(&detail).min(inner / 2);
+    let label_budget = inner.saturating_sub(if detail_budget > 0 {
+        detail_budget + 1
+    } else {
+        0
+    });
+    let label = truncate_end(&item.label, label_budget);
+    let pad = inner.saturating_sub(display_width(&label) + detail_budget);
+
+    let row_style = if armed {
+        Style::default().bg(p.red).fg(panel_contrast_fg(p))
+    } else if selected {
+        Style::default().bg(p.accent).fg(panel_contrast_fg(p))
+    } else {
+        Style::default()
+    };
+    let label_style = if armed || selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else if item.danger {
+        Style::default().fg(p.red)
+    } else {
+        Style::default().fg(p.text)
+    };
+    let detail_style = if armed || selected {
+        row_style
+    } else {
+        Style::default().fg(p.overlay0).add_modifier(Modifier::DIM)
+    };
+
+    let mut spans = vec![Span::raw(" "), Span::styled(label, label_style)];
+    if pad > 0 {
+        spans.push(Span::raw(" ".repeat(pad)));
+    }
+    if detail_budget > 0 {
+        spans.push(Span::styled(
+            truncate_end(&detail, detail_budget),
+            detail_style,
+        ));
+    }
+    spans.push(Span::raw(" "));
+
+    frame.render_widget(Paragraph::new(Line::from(spans)).style(row_style), rect);
+}
+
 /// The open/close chevron, mirroring the left sidebar's `«`/`»`.
 pub(super) fn render_git_sidebar_toggle(
     frame: &mut Frame,
@@ -688,6 +1216,28 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// A dropdown of `count` selectable rows, for geometry tests.
+    fn test_menu(count: usize, filterable: bool) -> GitMenuState {
+        GitMenuState {
+            kind: GitMenuKind::More,
+            title: "actions".to_string(),
+            items: (0..count)
+                .map(|index| GitMenuItem {
+                    label: format!("item {index}"),
+                    detail: None,
+                    action: Some(crate::app::git_sidebar::GitMenuAction::Refresh),
+                    danger: false,
+                })
+                .collect(),
+            filterable,
+            filter: String::new(),
+            selected: 0,
+            scroll: 0,
+            parent: None,
+            armed: None,
+        }
+    }
+
     fn state_with(staged: usize, unstaged: usize) -> GitSidebarState {
         let file = |n: usize| GitFileStatus {
             path: PathBuf::from(format!("src/file{n}.rs")),
@@ -706,25 +1256,101 @@ mod tests {
     }
 
     #[test]
-    fn layout_reserves_separator_footer_and_message_box() {
+    fn layout_reserves_separator_footer_action_bar_and_message_box() {
         let area = Rect::new(70, 0, 30, 20);
         let layout = git_sidebar_layout(area);
         assert_eq!(layout.content, Rect::new(71, 0, 29, 20));
         assert_eq!(layout.title, Rect::new(71, 0, 29, 1));
         assert_eq!(layout.meta, Rect::new(71, 1, 29, 1));
-        assert_eq!(layout.message_box, Rect::new(71, 2, 29, 3));
-        assert_eq!(layout.message_input, Rect::new(72, 3, 27, 1));
-        assert_eq!(layout.divider_y, Some(5));
-        assert_eq!(layout.list, Rect::new(71, 6, 29, 13));
+        assert_eq!(layout.actions, Rect::new(71, 2, 29, 1));
+        assert_eq!(layout.message_box, Rect::new(71, 3, 29, 3));
+        assert_eq!(layout.message_input, Rect::new(72, 4, 27, 1));
+        assert_eq!(layout.divider_y, Some(6));
+        assert_eq!(layout.list, Rect::new(71, 7, 29, 12));
         assert_eq!(layout.footer, Rect::new(71, 19, 29, 1));
     }
 
     #[test]
-    fn layout_drops_the_message_box_in_a_short_panel() {
+    fn layout_drops_the_message_box_before_the_action_bar() {
         let layout = git_sidebar_layout(Rect::new(70, 0, 30, 6));
+        assert_eq!(layout.actions, Rect::new(71, 2, 29, 1));
         assert_eq!(layout.message_box, Rect::default());
         assert_eq!(layout.divider_y, None);
-        assert_eq!(layout.list, Rect::new(71, 2, 29, 3));
+        assert_eq!(layout.list, Rect::new(71, 3, 29, 2));
+    }
+
+    #[test]
+    fn action_bar_drops_buttons_from_the_right_when_squeezed() {
+        let all = git_sidebar_button_rects(Rect::new(71, 2, 29, 1));
+        assert_eq!(all.len(), GIT_SIDEBAR_BUTTONS.len());
+        assert_eq!(all[0].0, GitSidebarButton::Commit);
+        assert_eq!(all[0].1, Rect::new(71, 2, 3, 1));
+        assert_eq!(all[1].1, Rect::new(74, 2, 3, 1));
+
+        let squeezed = git_sidebar_button_rects(Rect::new(71, 2, 8, 1));
+        assert_eq!(squeezed.len(), 2);
+        assert_eq!(squeezed.last().unwrap().0, GitSidebarButton::Pull);
+
+        assert!(git_sidebar_button_rects(Rect::new(71, 2, 2, 1)).is_empty());
+    }
+
+    #[test]
+    fn row_icons_sit_at_the_end_of_the_row_and_match_the_group() {
+        let rect = Rect::new(71, 7, 28, 1);
+
+        let staged = git_row_icon_rects(GitSection::Staged, rect);
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].0, GitRowIcon::Unstage);
+        assert_eq!(staged[0].1, Rect::new(97, 7, 2, 1));
+
+        let changes = git_row_icon_rects(GitSection::Changes, rect);
+        assert_eq!(
+            changes.iter().map(|(icon, _)| *icon).collect::<Vec<_>>(),
+            vec![GitRowIcon::Discard, GitRowIcon::Stage]
+        );
+        assert_eq!(changes[0].1, Rect::new(95, 7, 2, 1));
+        assert_eq!(changes[1].1, Rect::new(97, 7, 2, 1));
+
+        assert!(git_row_icon_rects(GitSection::Commits, rect).is_empty());
+        // Too narrow to keep a readable name alongside the icons.
+        assert!(git_row_icon_rects(GitSection::Changes, Rect::new(71, 7, 10, 1)).is_empty());
+    }
+
+    #[test]
+    fn menu_hangs_under_the_action_bar_and_grows_leftward() {
+        let area = Rect::new(70, 0, 30, 20);
+        let menu = test_menu(6, false);
+        let layout = git_menu_layout(area, &menu).expect("menu fits");
+        // 46 wide, right edge flush with the panel's.
+        assert_eq!(layout.rect, Rect::new(54, 3, 46, 8));
+        assert_eq!(layout.filter, Rect::default());
+        assert_eq!(layout.list, Rect::new(55, 4, 44, 6));
+
+        // A filterable menu spends one more row on the filter line.
+        let filterable = test_menu(6, true);
+        let layout = git_menu_layout(area, &filterable).expect("menu fits");
+        assert_eq!(layout.filter, Rect::new(55, 4, 44, 1));
+        assert_eq!(layout.list, Rect::new(55, 5, 44, 6));
+    }
+
+    #[test]
+    fn menu_row_hit_testing_follows_the_scroll_offset() {
+        let area = Rect::new(70, 0, 30, 12);
+        let mut menu = test_menu(40, false);
+        let layout = git_menu_layout(area, &menu).expect("menu fits");
+        assert_eq!(
+            git_menu_row_at(area, &menu, layout.list.x, layout.list.y),
+            Some(0)
+        );
+        menu.scroll = 5;
+        assert_eq!(
+            git_menu_row_at(area, &menu, layout.list.x, layout.list.y),
+            Some(5)
+        );
+        // Outside the box entirely.
+        assert_eq!(git_menu_row_at(area, &menu, 0, 0), None);
+        assert!(git_menu_contains(area, &menu, layout.list.x, layout.list.y));
+        assert!(!git_menu_contains(area, &menu, 0, 0));
     }
 
     #[test]
@@ -737,10 +1363,10 @@ mod tests {
         let mut state = state_with(1, 20);
         let area = Rect::new(70, 0, 30, 20);
         let list = git_sidebar_layout(area).list;
-        assert_eq!(list.height, 13);
+        assert_eq!(list.height, 12);
 
         let areas = compute_git_sidebar_row_areas(&state, area);
-        assert_eq!(areas.len(), 13);
+        assert_eq!(areas.len(), 12);
         assert_eq!(areas[0].index, 0);
         assert_eq!(areas[0].rect.y, list.y);
         // 23 rows do not fit in 13, so a scrollbar column is reserved.
@@ -757,10 +1383,10 @@ mod tests {
         let mut state = state_with(0, 20);
         let list = git_sidebar_layout(Rect::new(70, 0, 30, 20)).list;
         let metrics = git_sidebar_scroll_metrics(&state, list);
-        // 21 rows (header + 20 files) in a 13-row viewport.
-        assert_eq!(metrics.max_offset_from_bottom, 8);
-        assert_eq!(metrics.offset_from_bottom, 8);
-        state.scroll = 8;
+        // 21 rows (header + 20 files) in a 12-row viewport.
+        assert_eq!(metrics.max_offset_from_bottom, 9);
+        assert_eq!(metrics.offset_from_bottom, 9);
+        state.scroll = 9;
         let metrics = git_sidebar_scroll_metrics(&state, list);
         assert_eq!(metrics.offset_from_bottom, 0);
     }

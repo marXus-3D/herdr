@@ -340,6 +340,9 @@ impl AppState {
             self.git_sidebar_state.needs_force_refresh = true;
         }
         self.git_sidebar_state.pending_discard = None;
+        // A dropdown or a prompt belongs to a visible panel.
+        self.git_sidebar_state.menu = None;
+        self.git_sidebar_state.prompt = None;
         self.mark_session_dirty();
     }
 
@@ -354,7 +357,17 @@ impl AppState {
         let area = self.view.git_sidebar_rect;
         let layout = crate::ui::git_sidebar_layout(area);
         self.mode = Mode::GitSidebar;
-        self.git_sidebar_state.pending_discard = None;
+        // Any click cancels a pending discard, except the second click on the
+        // same discard icon — that arm restores it below.
+        let armed_discard = self.git_sidebar_state.pending_discard.take();
+
+        // Action bar: the buttons own their row outright.
+        if let Some((button, _)) = crate::ui::git_sidebar_button_rects(layout.actions)
+            .into_iter()
+            .find(|(_, rect)| rect_contains(*rect, col, row))
+        {
+            return Some(MouseAction::GitSidebarButtonPressed(button));
+        }
 
         // Commit message box: focus it and drop the caret where it was clicked.
         if rect_contains(layout.message_box, col, row) {
@@ -402,15 +415,25 @@ impl AppState {
                 self.git_sidebar_state.toggle_collapsed(section);
                 None
             }
-            GitSidebarRow::File { .. } => {
+            GitSidebarRow::File { section, .. } => {
                 self.git_sidebar_state.select_index(hit.index);
-                // The status badge is the stage/unstage hit target, as the
-                // inline +/- icon is in VS Code; the rest of the row opens the
-                // diff.
-                if col == hit.rect.x + 1 {
-                    Some(MouseAction::GitSidebarToggleStage)
-                } else {
-                    Some(MouseAction::GitSidebarOpenDiff)
+                let icon = crate::ui::git_row_icon_rects(section, hit.rect)
+                    .into_iter()
+                    .find(|(_, rect)| rect_contains(*rect, col, row))
+                    .map(|(icon, _)| icon);
+                match icon {
+                    // The status badge stays a stage/unstage target too, so a
+                    // narrow panel with no room for icons is still usable.
+                    Some(crate::ui::GitRowIcon::Stage | crate::ui::GitRowIcon::Unstage) => {
+                        Some(MouseAction::GitSidebarToggleStage)
+                    }
+                    Some(crate::ui::GitRowIcon::Discard) => {
+                        // Discarding takes two clicks; keep the first one's arm.
+                        self.git_sidebar_state.pending_discard = armed_discard;
+                        Some(MouseAction::GitSidebarDiscard)
+                    }
+                    None if col == hit.rect.x + 1 => Some(MouseAction::GitSidebarToggleStage),
+                    None => Some(MouseAction::GitSidebarOpenDiff),
                 }
             }
             GitSidebarRow::Commit { .. } => {
@@ -419,6 +442,62 @@ impl AppState {
             }
             GitSidebarRow::Placeholder => None,
         }
+    }
+
+    /// Route a left click while a source-control dropdown is open.
+    ///
+    /// The dropdown is modal: a click anywhere else closes it rather than
+    /// falling through to whatever is underneath.
+    pub(super) fn handle_git_menu_click(&mut self, col: u16, row: u16) -> Option<MouseAction> {
+        let area = self.view.git_sidebar_rect;
+        let inside = self
+            .git_sidebar_state
+            .menu
+            .as_ref()
+            .is_some_and(|menu| crate::ui::git_menu_contains(area, menu, col, row));
+        if !inside {
+            self.git_sidebar_state.menu = None;
+            return None;
+        }
+
+        let hit = self
+            .git_sidebar_state
+            .menu
+            .as_ref()
+            .and_then(|menu| crate::ui::git_menu_row_at(area, menu, col, row));
+        let index = hit?;
+        let menu = self.git_sidebar_state.menu.as_mut()?;
+        menu.select_visible(index);
+        // Only a row that can actually run anything reports back; clicking the
+        // filter line or a rule just moves the cursor.
+        menu.selected_item()
+            .is_some_and(|item| item.is_selectable())
+            .then_some(MouseAction::GitSidebarMenuActivate)
+    }
+
+    /// Route a right click inside the source-control panel: it opens the
+    /// dropdown for the row under the pointer.
+    pub(super) fn handle_git_sidebar_right_click(
+        &mut self,
+        col: u16,
+        row: u16,
+    ) -> Option<MouseAction> {
+        if self.git_sidebar_closed {
+            return None;
+        }
+        self.mode = Mode::GitSidebar;
+        self.git_sidebar_state.pending_discard = None;
+        if let Some(hit) = self
+            .view
+            .git_sidebar_rows
+            .iter()
+            .find(|row_area| rect_contains(row_area.rect, col, row))
+            .copied()
+        {
+            self.git_sidebar_state.focus_list();
+            self.git_sidebar_state.select_index(hit.index);
+        }
+        Some(MouseAction::GitSidebarRowMenu)
     }
 
     pub(super) fn on_sidebar_section_divider(&self, col: u16, row: u16) -> bool {

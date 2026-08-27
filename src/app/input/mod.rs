@@ -429,6 +429,14 @@ impl App {
                 match action {
                     MouseAction::GitSidebarToggleStage => self.toggle_git_sidebar_stage(),
                     MouseAction::GitSidebarOpenDiff => self.open_git_sidebar_diff(),
+                    MouseAction::GitSidebarDiscard => {
+                        self.discard_selected_git_sidebar_file()
+                    }
+                    MouseAction::GitSidebarButtonPressed(button) => {
+                        self.activate_git_sidebar_button(button)
+                    }
+                    MouseAction::GitSidebarMenuActivate => self.activate_git_sidebar_menu_item(),
+                    MouseAction::GitSidebarRowMenu => self.open_git_sidebar_row_menu(),
                     MouseAction::NewWorkspace => {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }

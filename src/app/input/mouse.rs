@@ -33,6 +33,14 @@ pub(super) enum MouseAction {
     GitSidebarToggleStage,
     /// Open the diff (or `git show`) for the row that was just selected.
     GitSidebarOpenDiff,
+    /// Discard (or delete, when untracked) the row that was just selected.
+    GitSidebarDiscard,
+    /// Run an action-bar button.
+    GitSidebarButtonPressed(crate::ui::GitSidebarButton),
+    /// Activate the dropdown row that was just selected.
+    GitSidebarMenuActivate,
+    /// Open the dropdown for the source-control row that was just selected.
+    GitSidebarRowMenu,
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -439,6 +447,13 @@ impl AppState {
                         }
                     }
                     return None;
+                }
+
+                // An open source-control dropdown is modal over the whole
+                // screen: it hangs outside the panel, so it has to be checked
+                // before anything that owns those columns normally.
+                if self.git_sidebar_state.menu.is_some() {
+                    return self.handle_git_menu_click(mouse.column, mouse.row);
                 }
 
                 if self.on_sidebar_divider(mouse.column, mouse.row) {
@@ -1002,6 +1017,28 @@ impl AppState {
                 }
             }
 
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                if self.git_sidebar_state.menu.is_some() =>
+            {
+                let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
+                    -GIT_SIDEBAR_WHEEL_ROWS
+                } else {
+                    GIT_SIDEBAR_WHEEL_ROWS
+                };
+                let viewport = self
+                    .git_sidebar_state
+                    .menu
+                    .as_ref()
+                    .and_then(|menu| {
+                        crate::ui::git_menu_layout(self.view.git_sidebar_rect, menu)
+                    })
+                    .map(|layout| layout.list.height as usize)
+                    .unwrap_or(0);
+                if let Some(menu) = self.git_sidebar_state.menu.as_mut() {
+                    menu.scroll_by(delta, viewport);
+                }
+            }
+
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if in_git_sidebar => {
                 let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
                     -GIT_SIDEBAR_WHEEL_ROWS
@@ -1151,6 +1188,10 @@ impl AppState {
                     });
                     self.mode = Mode::ContextMenu;
                 }
+            }
+
+            MouseEventKind::Down(MouseButton::Right) if in_git_sidebar => {
+                return self.handle_git_sidebar_right_click(mouse.column, mouse.row);
             }
 
             MouseEventKind::Down(MouseButton::Right) if !in_sidebar && !in_git_sidebar => {
