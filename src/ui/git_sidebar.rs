@@ -59,7 +59,7 @@ pub fn render_git_sidebar(
 
     // Staged changes
     if !state.staged_files.is_empty() {
-        let chev = if state.section_collapsed_staged { "?" } else { "?" };
+        let chev = if state.section_collapsed_staged { "▶" } else { "▼" };
         changes_items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("{} ", chev), Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(format!("Staged Changes ({})", state.staged_files.len()), Style::default().add_modifier(Modifier::BOLD)),
@@ -87,7 +87,7 @@ pub fn render_git_sidebar(
 
     // Unstaged changes
     if !state.unstaged_files.is_empty() {
-        let chev = if state.section_collapsed_changes { "?" } else { "?" };
+        let chev = if state.section_collapsed_changes { "▶" } else { "▼" };
         changes_items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("{} ", chev), Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(format!("Changes ({})", state.unstaged_files.len()), Style::default().add_modifier(Modifier::BOLD)),
@@ -129,13 +129,16 @@ pub fn render_git_sidebar(
 
     // Commits graph in bottom section
     let mut commits_items = Vec::new();
-    if !state.recent_commits.is_empty() {
-        let chev = if state.section_collapsed_commits { "?" } else { "?" };
-        commits_items.push(ListItem::new(Line::from(vec![
-            Span::styled(format!("{} ", chev), Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled("Commits", Style::default().add_modifier(Modifier::BOLD)),
-        ])));
-        if !state.section_collapsed_commits {
+    let chev = if state.section_collapsed_commits { "▶" } else { "▼" };
+    commits_items.push(ListItem::new(Line::from(vec![
+        Span::styled(format!("{} ", chev), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled("Commits", Style::default().add_modifier(Modifier::BOLD)),
+    ])));
+    
+    if !state.section_collapsed_commits {
+        if state.recent_commits.is_empty() {
+            commits_items.push(ListItem::new(Line::from(Span::styled("No recent commits", Style::default().fg(p.overlay0)))));
+        } else {
             for commit in &state.recent_commits {
                 let graph_str: String = commit.graph_columns.iter().collect();
                 let bg = if idx == state.selected_index && app.mode == crate::app::state::Mode::GitSidebar { p.surface_dim } else { p.sidebar_bg };
@@ -206,7 +209,7 @@ pub fn render_git_sidebar_toggle(
     }
     
     // Left-pointing arrow when expanded, right-pointing when collapsed
-    let icon = if collapsed { "?" } else { "?" };
+    let icon = if collapsed { "▶" } else { "◀" };
     let icon_style = Style::default().fg(p.overlay0);
     frame.render_widget(Paragraph::new(Span::styled(icon, icon_style)), toggle_area);
 }

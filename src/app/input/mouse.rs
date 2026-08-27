@@ -550,6 +550,7 @@ impl AppState {
                     if !self.git_sidebar_closed {
                         self.mode = Mode::GitSidebar;
                         self.git_sidebar_state.is_refreshing = false;
+                        self.git_sidebar_state.needs_force_refresh = true;
                     } else if self.mode == Mode::GitSidebar {
                         self.mode = Mode::Terminal;
                     }

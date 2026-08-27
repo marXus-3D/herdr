@@ -76,6 +76,7 @@ impl App {
 
     pub(crate) fn request_git_identity_refresh(&mut self, now: Instant) {
         self.git_identity_refresh_requested = true;
+        self.state.git_sidebar_state.needs_force_refresh = true;
         self.mark_git_status_refresh_due(now);
     }
 
@@ -551,13 +552,14 @@ impl App {
         let Some(ws) = self.state.active.and_then(|idx| self.state.workspaces.get(idx)) else { return; };
         let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) else { return; };
 
-        // FIXME: we should track the last refresh time for git_sidebar to avoid spamming
-        // For now we just tie it to git_refresh_deadline which runs roughly every 3-10s
         let force = self.state.git_sidebar_state.needs_force_refresh;
-        let deadline_passed = self.git_refresh_deadline().map_or(false, |d| now >= d);
+        let time_since_last = self.state.git_sidebar_state.last_refresh.map(|l| now.saturating_duration_since(l)).unwrap_or(std::time::Duration::from_secs(60));
+        let deadline_passed = time_since_last >= std::time::Duration::from_secs(5);
+        
         if !force && !deadline_passed { return; }
 
         self.state.git_sidebar_state.needs_force_refresh = false;
+        self.state.git_sidebar_state.last_refresh = Some(now);
         self.state.git_sidebar_state.is_refreshing = true;
         let tx = self.event_tx.clone();
         crate::app::git_sidebar::GitSidebarState::spawn_refresh(cwd, tx);

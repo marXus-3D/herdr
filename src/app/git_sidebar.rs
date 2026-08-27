@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitSidebarState {
     pub staged_files: Vec<GitFileStatus>,
     pub unstaged_files: Vec<GitFileStatus>,
@@ -18,6 +18,31 @@ pub struct GitSidebarState {
     pub error_message: Option<String>,
     pub repo_name: String,
     pub branch: String,
+    pub last_refresh: Option<std::time::Instant>,
+}
+
+impl Default for GitSidebarState {
+    fn default() -> Self {
+        Self {
+            staged_files: Vec::new(),
+            unstaged_files: Vec::new(),
+            recent_commits: Vec::new(),
+            commit_message: String::new(),
+            commit_cursor: 0,
+            section_collapsed_staged: false,
+            section_collapsed_changes: false,
+            section_collapsed_commits: false,
+            selected_index: 0,
+            scroll_changes: 0,
+            scroll_graph: 0,
+            is_refreshing: false,
+            needs_force_refresh: true, // IMPORTANT: force refresh on startup
+            error_message: None,
+            repo_name: String::new(),
+            branch: String::new(),
+            last_refresh: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

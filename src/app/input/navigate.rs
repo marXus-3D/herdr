@@ -407,6 +407,7 @@ impl App {
                 if !self.state.git_sidebar_closed {
                     self.state.mode = Mode::GitSidebar;
                     self.state.git_sidebar_state.is_refreshing = false;
+                    self.state.git_sidebar_state.needs_force_refresh = true;
                     self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
                 } else {
                     if self.state.mode == Mode::GitSidebar {
