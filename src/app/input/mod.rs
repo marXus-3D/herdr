@@ -380,6 +380,24 @@ impl App {
             }
         }
 
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && self.state.on_git_sidebar_divider(mouse.column, mouse.row)
+        {
+            let now = std::time::Instant::now();
+            let is_double_click = self
+                .last_git_sidebar_divider_click
+                .is_some_and(|last| now.duration_since(last) <= super::SIDEBAR_DOUBLE_CLICK_WINDOW);
+            self.last_git_sidebar_divider_click = Some(now);
+
+            if is_double_click {
+                // reset to some default
+                self.state.git_sidebar_width = 30; // fallback to default
+                self.state.mark_session_dirty();
+                self.state.drag = None;
+                return;
+            }
+        }
+
         if self.handle_modified_url_click(source_id, mouse) {
             return;
         }

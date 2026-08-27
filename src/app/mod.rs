@@ -15,6 +15,7 @@ pub(crate) use api_helpers::limit_snapshot_lines;
 mod config_io;
 mod creation;
 mod git_refresh;
+pub mod git_sidebar;
 mod ids;
 mod input;
 pub(crate) mod pane_graphics;
@@ -127,6 +128,7 @@ pub struct App {
     pub(crate) pending_api_worktree_remove_paths: HashMap<std::path::PathBuf, u64>,
     pub(crate) next_api_worktree_operation_id: u64,
     pub(crate) last_sidebar_divider_click: Option<Instant>,
+    pub(crate) last_git_sidebar_divider_click: Option<Instant>,
     pub(crate) last_pane_click: Option<PaneClickState>,
     pub(crate) pending_url_click_sources: HashSet<InputSourceId>,
     pub(crate) next_resize_poll: Instant,
@@ -648,6 +650,13 @@ impl App {
             sidebar_width_auto: false,
             sidebar_collapsed: config.ui.sidebar_start_collapsed,
             sidebar_collapsed_mode: config.ui.sidebar_collapsed_mode,
+            git_sidebar_width: config.ui.git_sidebar_width,
+            git_sidebar_min_width: config.ui.git_sidebar_min_width,
+            git_sidebar_max_width: config.ui.git_sidebar_max_width,
+            git_sidebar_closed: config.ui.git_sidebar_start_closed,
+            git_sidebar_collapsed_mode: config.ui.git_sidebar_collapsed_mode,
+            git_sidebar_escape_to_dismiss: config.ui.git_sidebar_escape_to_dismiss,
+            git_sidebar_state: crate::app::git_sidebar::GitSidebarState::default(),
             sidebar_section_split,
             agent_panel_sort,
             status_indicators: config.ui.status_indicators,
@@ -779,6 +788,7 @@ impl App {
             pending_api_worktree_remove_paths: HashMap::new(),
             next_api_worktree_operation_id: 1,
             last_sidebar_divider_click: None,
+            last_git_sidebar_divider_click: None,
             last_pane_click: None,
             pending_url_click_sources: HashSet::new(),
             next_resize_poll: Instant::now() + RESIZE_POLL_INTERVAL,
@@ -1494,6 +1504,14 @@ impl App {
                     .state
                     .sidebar_width
                     .clamp(self.state.sidebar_min_width, self.state.sidebar_max_width);
+                self.state.git_sidebar_min_width = config.ui.git_sidebar_min_width;
+                self.state.git_sidebar_max_width = config.ui.git_sidebar_max_width;
+                self.state.git_sidebar_width = self.state.git_sidebar_width.clamp(
+                    self.state.git_sidebar_min_width,
+                    self.state.git_sidebar_max_width,
+                );
+                self.state.git_sidebar_collapsed_mode = config.ui.git_sidebar_collapsed_mode;
+                self.state.git_sidebar_escape_to_dismiss = config.ui.git_sidebar_escape_to_dismiss;
                 self.state.mouse_capture = config.ui.mouse_capture;
                 self.state.copy_on_select = config.ui.copy_on_select;
                 if self.state.redraw_on_focus_gained != config.ui.redraw_on_focus_gained {

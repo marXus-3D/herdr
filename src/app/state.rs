@@ -870,6 +870,7 @@ pub enum ViewLayout {
 pub struct ViewState {
     pub layout: ViewLayout,
     pub sidebar_rect: Rect,
+    pub git_sidebar_rect: Rect,
     pub workspace_card_areas: Vec<WorkspaceCardArea>,
     pub tab_bar_rect: Rect,
     pub tab_hit_areas: Vec<Rect>,
@@ -1234,6 +1235,7 @@ pub(crate) enum DragTarget {
     },
     SidebarDivider,
     SidebarSectionDivider,
+    GitSidebarDivider,
 }
 
 /// Active mouse drag on a split border or sidebar divider.
@@ -1526,6 +1528,15 @@ pub struct AppState {
     pub sidebar_width_auto: bool,
     pub sidebar_collapsed: bool,
     pub sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
+    
+    pub git_sidebar_width: u16,
+    pub git_sidebar_min_width: u16,
+    pub git_sidebar_max_width: u16,
+    pub git_sidebar_closed: bool,
+    pub git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
+    pub git_sidebar_escape_to_dismiss: bool,
+    pub git_sidebar_state: crate::app::git_sidebar::GitSidebarState,
+
     /// Ratio of sidebar height allocated to the workspaces section.
     pub sidebar_section_split: f32,
     pub agent_panel_sort: AgentPanelSort,
@@ -1879,6 +1890,7 @@ impl AppState {
             view: ViewState {
                 layout: ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
+                git_sidebar_rect: Rect::default(),
                 workspace_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
@@ -1922,6 +1934,13 @@ impl AppState {
             sidebar_width_auto: false,
             sidebar_collapsed: false,
             sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
+            git_sidebar_width: 30,
+            git_sidebar_min_width: 22,
+            git_sidebar_max_width: 50,
+            git_sidebar_closed: true,
+            git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Hidden,
+            git_sidebar_escape_to_dismiss: true,
+            git_sidebar_state: crate::app::git_sidebar::GitSidebarState::default(),
             sidebar_section_split: 0.5,
             agent_panel_sort: AgentPanelSort::Spaces,
             status_indicators: crate::config::StatusIndicatorStyle::Dots,

@@ -16,6 +16,7 @@ mod release_notes;
 mod scrollbar;
 mod settings;
 mod sidebar;
+pub(crate) mod git_sidebar;
 mod status;
 mod tab_surface;
 mod tabs;
@@ -234,8 +235,23 @@ fn compute_view_internal(
             .clamp(app.sidebar_min_width, app.sidebar_max_width)
     };
 
-    let [sidebar_area, main_area] =
-        Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(1)]).areas(area);
+    let git_sidebar_w = if app.git_sidebar_closed {
+        match app.git_sidebar_collapsed_mode {
+            crate::config::SidebarCollapsedModeConfig::Compact => COLLAPSED_WIDTH,
+            crate::config::SidebarCollapsedModeConfig::Hidden => 0,
+        }
+    } else {
+        app.git_sidebar_width
+            .clamp(app.git_sidebar_min_width, app.git_sidebar_max_width)
+    };
+
+    let [sidebar_area, main_area, git_sidebar_area] =
+        Layout::horizontal([
+            Constraint::Length(sidebar_w),
+            Constraint::Min(1),
+            Constraint::Length(git_sidebar_w),
+        ])
+        .areas(area);
 
     let (tab_bar_rect, terminal_area) = app
         .active
@@ -307,6 +323,7 @@ fn compute_view_internal(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Desktop,
         sidebar_rect: sidebar_area,
+        git_sidebar_rect: git_sidebar_area,
         workspace_card_areas,
         tab_bar_rect,
         tab_hit_areas: tab_bar_view.tab_hit_areas,
@@ -370,6 +387,7 @@ fn compute_mobile_view(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Mobile,
         sidebar_rect: Rect::default(),
+        git_sidebar_rect: Rect::default(),
         workspace_card_areas: Vec::new(),
         tab_bar_rect: Rect::default(),
         tab_hit_areas: Vec::new(),
@@ -468,11 +486,20 @@ fn render_navigation_chrome(
 ) {
     if app.view.layout == ViewLayout::Mobile {
         render_mobile_header(app, terminal_runtimes, frame, app.view.mobile_header_rect);
-    } else if app.view.sidebar_rect.width > 0 {
-        if app.sidebar_collapsed {
-            render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
-        } else {
-            render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+    } else {
+        if app.view.sidebar_rect.width > 0 {
+            if app.sidebar_collapsed {
+                render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
+            } else {
+                render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+            }
+        }
+        if app.view.git_sidebar_rect.width > 0 {
+            if app.git_sidebar_closed {
+                crate::ui::git_sidebar::render_git_sidebar_collapsed(app, frame, app.view.git_sidebar_rect);
+            } else {
+                crate::ui::git_sidebar::render_git_sidebar(app, terminal_runtimes, frame, app.view.git_sidebar_rect);
+            }
         }
     }
 }

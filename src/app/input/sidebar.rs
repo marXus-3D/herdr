@@ -272,6 +272,25 @@ impl AppState {
         self.mark_session_dirty();
     }
 
+    pub(super) fn on_git_sidebar_divider(&self, col: u16, row: u16) -> bool {
+        if self.git_sidebar_closed {
+            return false;
+        }
+        let sidebar = self.view.git_sidebar_rect;
+        sidebar.width > 0
+            && col == sidebar.x.saturating_sub(1)
+            && row >= sidebar.y
+            && row < sidebar.y + sidebar.height
+    }
+
+    pub(super) fn set_manual_git_sidebar_width(&mut self, divider_col: u16) {
+        let sidebar = self.view.git_sidebar_rect;
+        let right_edge = sidebar.x + sidebar.width;
+        let width = right_edge.saturating_sub(divider_col);
+        self.git_sidebar_width = width.clamp(self.git_sidebar_min_width, self.git_sidebar_max_width);
+        self.mark_session_dirty();
+    }
+
     pub(super) fn on_sidebar_section_divider(&self, col: u16, row: u16) -> bool {
         if self.sidebar_collapsed {
             return false;

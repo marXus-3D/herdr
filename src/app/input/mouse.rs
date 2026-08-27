@@ -431,6 +431,15 @@ impl AppState {
                     return None;
                 }
 
+                if self.on_git_sidebar_divider(mouse.column, mouse.row) {
+                    self.drag = Some(DragState {
+                        target: DragTarget::GitSidebarDivider,
+                    });
+                    self.set_manual_git_sidebar_width(mouse.column);
+                    return None;
+                }
+
+
                 if self.on_sidebar_section_divider(mouse.column, mouse.row) {
                     self.drag = Some(DragState {
                         target: DragTarget::SidebarSectionDivider,
@@ -818,6 +827,9 @@ impl AppState {
                         }
                         DragTarget::SidebarDivider => {
                             self.set_manual_sidebar_width(mouse.column);
+                        }
+                        DragTarget::GitSidebarDivider => {
+                            self.set_manual_git_sidebar_width(mouse.column);
                         }
                         DragTarget::SidebarSectionDivider => {
                             self.set_sidebar_section_split(mouse.row);
