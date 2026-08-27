@@ -1938,7 +1938,7 @@ impl AppState {
             git_sidebar_width: 30,
             git_sidebar_min_width: 22,
             git_sidebar_max_width: 50,
-            git_sidebar_closed: true,
+            git_sidebar_closed: false,
             git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Hidden,
             git_sidebar_escape_to_dismiss: true,
             git_sidebar_state: crate::app::git_sidebar::GitSidebarState::default(),

@@ -410,10 +410,11 @@ impl App {
                     self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
                 } else {
                     if self.state.mode == Mode::GitSidebar {
-                        self.state.mode = Mode::Terminal;
+                        leave_navigate_mode(&mut self.state);
+                    } else {
+                        leave_navigate_mode(&mut self.state);
                     }
                 }
-                leave_navigate_mode(&mut self.state);
             }
             NavigateAction::CyclePaneNext => {
                 self.cycle_pane_via_api(false);
