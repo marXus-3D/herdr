@@ -824,6 +824,12 @@
           "description": "Toggle sidebar collapse."
         },
         {
+          "key": "keys.toggle_git_sidebar",
+          "type": "keybinding",
+          "default": "\"prefix+shift+b\"",
+          "description": "Open, focus, or close the source-control sidebar."
+        },
+        {
           "key": "keys.indexed.tabs",
           "type": "string",
           "default": "unset",
@@ -880,6 +886,46 @@
             "compact",
             "hidden"
           ]
+        },
+        {
+          "key": "ui.git_sidebar_width",
+          "type": "integer",
+          "default": "34",
+          "description": "Default width in columns of the source-control sidebar on the right."
+        },
+        {
+          "key": "ui.git_sidebar_min_width",
+          "type": "integer",
+          "default": "22",
+          "description": "Minimum source-control sidebar width (columns)."
+        },
+        {
+          "key": "ui.git_sidebar_max_width",
+          "type": "integer",
+          "default": "60",
+          "description": "Maximum source-control sidebar width (columns)."
+        },
+        {
+          "key": "ui.git_sidebar_start_closed",
+          "type": "boolean",
+          "default": "false",
+          "description": "Start with the source-control sidebar closed."
+        },
+        {
+          "key": "ui.git_sidebar_collapsed_mode",
+          "type": "enum",
+          "default": "compact",
+          "description": "Closed source-control sidebar presentation: a narrow change-count strip, or fully hidden.",
+          "values": [
+            "compact",
+            "hidden"
+          ]
+        },
+        {
+          "key": "ui.git_sidebar_escape_to_dismiss",
+          "type": "boolean",
+          "default": "true",
+          "description": "Close the source-control sidebar when Escape is pressed inside it, instead of only returning focus to the terminal."
         },
         {
           "key": "ui.mobile_width_threshold",

@@ -1,0 +1,14 @@
+--- src/config/keybinds.rs
++++ src/config/keybinds.rs
+@@ -46,2 +46,3 @@
+     pub toggle_sidebar: ActionKeybinds,
++    pub toggle_git_sidebar: ActionKeybinds,
+     pub custom_commands: Vec<CustomCommandKeybind>,
+@@ -82,2 +83,3 @@
+             toggle_sidebar: empty_action!(),
++            toggle_git_sidebar: empty_action!(),
+             custom_commands: Vec::new(),
+@@ -155,2 +157,3 @@
+             apply_action!(keybinds.toggle_sidebar, toggle_sidebar, source);
++            apply_action!(keybinds.toggle_git_sidebar, toggle_git_sidebar, source);
+ 

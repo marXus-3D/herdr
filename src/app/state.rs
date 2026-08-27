@@ -716,6 +716,18 @@ pub struct WorkspaceCardArea {
     pub indented: bool,
 }
 
+/// One drawn line of the source-control sidebar and the screen row it occupies.
+///
+/// Computed during `compute_view` so rendering and mouse hit-testing share a
+/// single source of truth for where each row landed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GitSidebarRowArea {
+    /// Index into `GitSidebarState::rows()`.
+    pub index: usize,
+    pub row: crate::app::git_sidebar::GitSidebarRow,
+    pub rect: Rect,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeCreateState {
     pub source_workspace_id: String,
@@ -871,6 +883,8 @@ pub struct ViewState {
     pub layout: ViewLayout,
     pub sidebar_rect: Rect,
     pub git_sidebar_rect: Rect,
+    /// Visible rows of the source-control sidebar, in draw order.
+    pub git_sidebar_rows: Vec<GitSidebarRowArea>,
     pub workspace_card_areas: Vec<WorkspaceCardArea>,
     pub tab_bar_rect: Rect,
     pub tab_hit_areas: Vec<Rect>,
@@ -1529,7 +1543,7 @@ pub struct AppState {
     pub sidebar_width_auto: bool,
     pub sidebar_collapsed: bool,
     pub sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
-    
+
     pub git_sidebar_width: u16,
     pub git_sidebar_min_width: u16,
     pub git_sidebar_max_width: u16,
@@ -1892,6 +1906,7 @@ impl AppState {
                 layout: ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
                 git_sidebar_rect: Rect::default(),
+                git_sidebar_rows: Vec::new(),
                 workspace_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
@@ -1935,9 +1950,9 @@ impl AppState {
             sidebar_width_auto: false,
             sidebar_collapsed: false,
             sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
-            git_sidebar_width: 30,
-            git_sidebar_min_width: 22,
-            git_sidebar_max_width: 50,
+            git_sidebar_width: crate::config::DEFAULT_GIT_SIDEBAR_WIDTH,
+            git_sidebar_min_width: crate::config::MIN_GIT_SIDEBAR_WIDTH,
+            git_sidebar_max_width: crate::config::MAX_GIT_SIDEBAR_WIDTH,
             git_sidebar_closed: false,
             git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
             git_sidebar_escape_to_dismiss: true,

@@ -11,6 +11,14 @@ use super::{
 
 pub const MAX_TOAST_DELAY_SECONDS: u64 = 3600;
 
+/// Default width of the source-control sidebar, and the width a double-click
+/// on its divider restores.
+pub const DEFAULT_GIT_SIDEBAR_WIDTH: u16 = 34;
+/// Narrowest useful source-control sidebar: a status badge plus a short name.
+pub const MIN_GIT_SIDEBAR_WIDTH: u16 = 22;
+/// Widest the source-control sidebar can be dragged.
+pub const MAX_GIT_SIDEBAR_WIDTH: u16 = 60;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannelConfig {
@@ -863,18 +871,18 @@ pub struct UiConfig {
     pub sidebar_start_collapsed: bool,
     /// Collapsed sidebar presentation. Default: compact.
     pub sidebar_collapsed_mode: SidebarCollapsedModeConfig,
-    
-    /// Git / Source Control sidebar width. Default: 30.
+
+    /// Source-control sidebar width. Default: 34.
     pub git_sidebar_width: u16,
-    /// Minimum Git sidebar width. Default: 22.
+    /// Minimum source-control sidebar width. Default: 22.
     pub git_sidebar_min_width: u16,
-    /// Maximum Git sidebar width. Default: 50.
+    /// Maximum source-control sidebar width. Default: 60.
     pub git_sidebar_max_width: u16,
-    /// Start with the Git sidebar closed/dismissed. Default: true.
+    /// Start with the source-control sidebar closed. Default: false.
     pub git_sidebar_start_closed: bool,
-    /// Git sidebar collapsed mode. Default: hidden.
+    /// Closed source-control sidebar presentation. Default: compact.
     pub git_sidebar_collapsed_mode: SidebarCollapsedModeConfig,
-    /// Close the Git sidebar when the Escape key is pressed inside it. Default: true.
+    /// Close the source-control sidebar on Escape. Default: true.
     pub git_sidebar_escape_to_dismiss: bool,
 
     /// Terminal width at or below which Herdr uses the mobile single-column layout. Default: 64.
@@ -1127,9 +1135,9 @@ impl Default for UiConfig {
             sidebar_max_width: 36,
             sidebar_start_collapsed: false,
             sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
-            git_sidebar_width: 30,
-            git_sidebar_min_width: 22,
-            git_sidebar_max_width: 50,
+            git_sidebar_width: DEFAULT_GIT_SIDEBAR_WIDTH,
+            git_sidebar_min_width: MIN_GIT_SIDEBAR_WIDTH,
+            git_sidebar_max_width: MAX_GIT_SIDEBAR_WIDTH,
             git_sidebar_start_closed: false,
             git_sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
             git_sidebar_escape_to_dismiss: true,

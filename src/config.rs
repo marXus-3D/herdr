@@ -25,7 +25,8 @@ pub use self::{
         ConfigReloadStatus, HostCursorModeConfig, NewTerminalCwdConfig, ShellModeConfig,
         SidebarCollapsedModeConfig, StatusIndicatorStyle, TabBarPositionConfig,
         ToastClipboardPosition, ToastConfig, ToastDelivery, ToastHerdrPosition,
-        UpdateChannelConfig, MAX_TOAST_DELAY_SECONDS,
+        UpdateChannelConfig, DEFAULT_GIT_SIDEBAR_WIDTH, MAX_GIT_SIDEBAR_WIDTH,
+        MAX_TOAST_DELAY_SECONDS, MIN_GIT_SIDEBAR_WIDTH,
     },
     sidebar::{
         AgentSidebarToken, AgentsSidebarConfig, SidebarConfig, SidebarTokenStyle,

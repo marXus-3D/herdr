@@ -25,10 +25,14 @@ use super::{
     ScrollbarClickTarget, TAB_DRAG_THRESHOLD, WORKSPACE_DRAG_THRESHOLD,
 };
 
+/// Rows the source-control list moves per wheel notch.
+const GIT_SIDEBAR_WHEEL_ROWS: isize = 3;
+
 pub(super) enum MouseAction {
-    GitSidebarStage(std::path::PathBuf),
-    GitSidebarUnstage(std::path::PathBuf),
-    GitSidebarDiff(std::path::PathBuf),
+    /// Stage or unstage the source-control row that was just selected.
+    GitSidebarToggleStage,
+    /// Open the diff (or `git show`) for the row that was just selected.
+    GitSidebarOpenDiff,
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -200,7 +204,12 @@ impl AppState {
             && mouse.row >= git_sidebar.y
             && mouse.row < git_sidebar.y + git_sidebar.height;
 
-        if self.handle_right_click_passthrough(terminal_runtimes, source_id, mouse, in_sidebar) {
+        if self.handle_right_click_passthrough(
+            terminal_runtimes,
+            source_id,
+            mouse,
+            in_sidebar || in_git_sidebar,
+        ) {
             return None;
         }
 
@@ -448,7 +457,6 @@ impl AppState {
                     return None;
                 }
 
-
                 if self.on_sidebar_section_divider(mouse.column, mouse.row) {
                     self.drag = Some(DragState {
                         target: DragTarget::SidebarSectionDivider,
@@ -538,26 +546,16 @@ impl AppState {
                     return None;
                 }
 
+                if self.on_git_sidebar_toggle(mouse.column, mouse.row) {
+                    self.toggle_git_sidebar_visibility();
+                    return None;
+                }
+
                 if in_sidebar {
                     if self.on_sidebar_toggle(mouse.column, mouse.row) {
                         self.sidebar_collapsed = !self.sidebar_collapsed;
                         return None;
                     }
-                }
-
-                if self.on_git_sidebar_toggle(mouse.column, mouse.row) {
-                    self.git_sidebar_closed = !self.git_sidebar_closed;
-                    if !self.git_sidebar_closed {
-                        self.mode = Mode::GitSidebar;
-                        self.git_sidebar_state.is_refreshing = false;
-                        self.git_sidebar_state.needs_force_refresh = true;
-                    } else if self.mode == Mode::GitSidebar {
-                        self.mode = Mode::Terminal;
-                    }
-                    return None;
-                }
-
-                if in_sidebar {
 
                     if self.sidebar_collapsed {
                         if let Some(idx) = self.collapsed_workspace_at_row(mouse.row) {
@@ -666,61 +664,7 @@ impl AppState {
                         return Some(MouseAction::FocusPane { ws_idx, pane_id });
                     }
                 } else if in_git_sidebar {
-                    let git_sidebar = self.view.git_sidebar_rect;
-                    
-                    // Check if clicked the commit box
-                    if mouse.row >= git_sidebar.y + 1 && mouse.row < git_sidebar.y + 1 + 3 {
-                        self.git_sidebar_state.selected_index = 0;
-                        self.mode = Mode::GitSidebar;
-                        return None;
-                    }
-
-                    let mut current_y = git_sidebar.y + 1 + 3; // Top border + commit box
-                    let mut handled = false;
-                    
-                    if !self.git_sidebar_state.staged_files.is_empty() {
-                        if mouse.row == current_y {
-                            self.git_sidebar_state.section_collapsed_staged = !self.git_sidebar_state.section_collapsed_staged;
-                            handled = true;
-                        }
-                        current_y += 1;
-                        if !self.git_sidebar_state.section_collapsed_staged {
-                            for (i, file) in self.git_sidebar_state.staged_files.clone().iter().enumerate() {
-                                if !handled && mouse.row == current_y {
-                                    self.git_sidebar_state.selected_index = 1 + i;
-                                    self.mode = Mode::GitSidebar;
-                                    return Some(MouseAction::GitSidebarDiff(file.path.clone()));
-                                }
-                                current_y += 1;
-                            }
-                        }
-                    }
-                    
-                    if !handled && !self.git_sidebar_state.unstaged_files.is_empty() {
-                        if mouse.row == current_y {
-                            self.git_sidebar_state.section_collapsed_changes = !self.git_sidebar_state.section_collapsed_changes;
-                            handled = true;
-                        }
-                        current_y += 1;
-                        if !self.git_sidebar_state.section_collapsed_changes {
-                            for (i, file) in self.git_sidebar_state.unstaged_files.clone().iter().enumerate() {
-                                if !handled && mouse.row == current_y {
-                                    self.git_sidebar_state.selected_index = 1 + self.git_sidebar_state.staged_files.len() + i;
-                                    self.mode = Mode::GitSidebar;
-                                    return Some(MouseAction::GitSidebarDiff(file.path.clone()));
-                                }
-                                current_y += 1;
-                            }
-                        }
-                    }
-                    
-                    if !handled && !self.git_sidebar_state.recent_commits.is_empty() {
-                        if mouse.row == current_y {
-                            self.git_sidebar_state.section_collapsed_commits = !self.git_sidebar_state.section_collapsed_commits;
-                            // handled = true;
-                        }
-                    }
-                    return None;
+                    return self.handle_git_sidebar_click(mouse.column, mouse.row);
                 } else if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     if self.mode != Mode::Terminal {
                         self.mode = Mode::Terminal;
@@ -1058,6 +1002,17 @@ impl AppState {
                 }
             }
 
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if in_git_sidebar => {
+                let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
+                    -GIT_SIDEBAR_WHEEL_ROWS
+                } else {
+                    GIT_SIDEBAR_WHEEL_ROWS
+                };
+                let viewport = crate::ui::git_sidebar_list_rect(self.view.git_sidebar_rect).height;
+                self.git_sidebar_state
+                    .scroll_by(delta, usize::from(viewport));
+            }
+
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
                 if !in_sidebar && self.scroll_selection_with_wheel(terminal_runtimes, mouse) => {}
 
@@ -1068,7 +1023,7 @@ impl AppState {
             }
 
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
-                if self.mode == Mode::Terminal && !in_sidebar =>
+                if self.mode == Mode::Terminal && !in_sidebar && !in_git_sidebar =>
             {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     self.forward_pane_reported_wheel(terminal_runtimes, &info, mouse);
@@ -1121,7 +1076,9 @@ impl AppState {
                 }
             }
 
-            MouseEventKind::Moved if self.mode == Mode::Terminal && !in_sidebar => {
+            MouseEventKind::Moved
+                if self.mode == Mode::Terminal && !in_sidebar && !in_git_sidebar =>
+            {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     let _ = self.forward_pane_mouse_motion(terminal_runtimes, &info, mouse);
                 }
@@ -1196,7 +1153,7 @@ impl AppState {
                 }
             }
 
-            MouseEventKind::Down(MouseButton::Right) if !in_sidebar => {
+            MouseEventKind::Down(MouseButton::Right) if !in_sidebar && !in_git_sidebar => {
                 if let Some(info) = self.pane_mouse_target(mouse.column, mouse.row).cloned() {
                     let ws_idx = self.active?;
                     let tab_idx = self

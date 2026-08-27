@@ -16,6 +16,7 @@ mod config_io;
 mod creation;
 mod git_refresh;
 pub mod git_sidebar;
+mod git_sidebar_runtime;
 mod ids;
 mod input;
 pub(crate) mod pane_graphics;
@@ -514,6 +515,23 @@ impl App {
             (18, 36)
         });
 
+        let (git_sidebar_min_width, git_sidebar_max_width) =
+            crate::config::validated_sidebar_bounds(
+                config.ui.git_sidebar_min_width,
+                config.ui.git_sidebar_max_width,
+            )
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    min = config.ui.git_sidebar_min_width,
+                    max = config.ui.git_sidebar_max_width,
+                    "ui.git_sidebar_min_width is greater than git_sidebar_max_width; falling back to default bounds"
+                );
+                (
+                    crate::config::MIN_GIT_SIDEBAR_WIDTH,
+                    crate::config::MAX_GIT_SIDEBAR_WIDTH,
+                )
+            });
+
         let worktree_directory =
             crate::worktree::expand_tilde_absolute_path(&config.worktrees.directory);
 
@@ -610,7 +628,8 @@ impl App {
             view: state::ViewState {
                 layout: state::ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
-                git_sidebar_rect: ratatui::layout::Rect::default(),
+                git_sidebar_rect: Rect::default(),
+                git_sidebar_rows: Vec::new(),
                 workspace_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
@@ -652,8 +671,8 @@ impl App {
             sidebar_collapsed: config.ui.sidebar_start_collapsed,
             sidebar_collapsed_mode: config.ui.sidebar_collapsed_mode,
             git_sidebar_width: config.ui.git_sidebar_width,
-            git_sidebar_min_width: config.ui.git_sidebar_min_width,
-            git_sidebar_max_width: config.ui.git_sidebar_max_width,
+            git_sidebar_min_width,
+            git_sidebar_max_width,
             git_sidebar_closed: config.ui.git_sidebar_start_closed,
             git_sidebar_collapsed_mode: config.ui.git_sidebar_collapsed_mode,
             git_sidebar_escape_to_dismiss: config.ui.git_sidebar_escape_to_dismiss,
@@ -1505,12 +1524,14 @@ impl App {
                     .state
                     .sidebar_width
                     .clamp(self.state.sidebar_min_width, self.state.sidebar_max_width);
-                self.state.git_sidebar_min_width = config.ui.git_sidebar_min_width;
-                self.state.git_sidebar_max_width = config.ui.git_sidebar_max_width;
-                self.state.git_sidebar_width = self.state.git_sidebar_width.clamp(
-                    self.state.git_sidebar_min_width,
-                    self.state.git_sidebar_max_width,
-                );
+                if let Some((min, max)) = crate::config::validated_sidebar_bounds(
+                    config.ui.git_sidebar_min_width,
+                    config.ui.git_sidebar_max_width,
+                ) {
+                    self.state.git_sidebar_min_width = min;
+                    self.state.git_sidebar_max_width = max;
+                    self.state.git_sidebar_width = self.state.git_sidebar_width.clamp(min, max);
+                }
                 self.state.git_sidebar_collapsed_mode = config.ui.git_sidebar_collapsed_mode;
                 self.state.git_sidebar_escape_to_dismiss = config.ui.git_sidebar_escape_to_dismiss;
                 self.state.mouse_capture = config.ui.mouse_capture;

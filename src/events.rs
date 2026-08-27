@@ -62,13 +62,13 @@ pub enum AppEvent {
         agent: Agent,
         observed_at: Instant,
     },
-    GitSidebarRefreshComplete {
-        staged: Vec<crate::app::git_sidebar::GitFileStatus>,
-        unstaged: Vec<crate::app::git_sidebar::GitFileStatus>,
-        commits: Vec<crate::app::git_sidebar::GitCommitGraphEntry>,
+    /// A source-control sidebar probe finished; carries the whole repository
+    /// snapshot so the panel swaps state in one move.
+    GitSidebarRefreshComplete(Box<crate::app::git_sidebar::GitSidebarSnapshot>),
+    /// A mutating source-control command (stage, commit, discard, ...) finished.
+    GitSidebarActionComplete {
         error: Option<String>,
-        branch: String,
-        repo_name: String,
+        message: Option<String>,
     },
     /// Fallback detector state changed in a pane.
     StateChanged {

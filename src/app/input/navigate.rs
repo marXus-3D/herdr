@@ -403,19 +403,10 @@ impl App {
                 leave_navigate_mode(&mut self.state);
             }
             NavigateAction::ToggleGitSidebar => {
-                self.state.git_sidebar_closed = !self.state.git_sidebar_closed;
-                if !self.state.git_sidebar_closed {
-                    self.state.mode = Mode::GitSidebar;
-                    self.state.git_sidebar_state.is_refreshing = false;
-                    self.state.git_sidebar_state.needs_force_refresh = true;
-                    self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
-                } else {
-                    if self.state.mode == Mode::GitSidebar {
-                        leave_navigate_mode(&mut self.state);
-                    } else {
-                        leave_navigate_mode(&mut self.state);
-                    }
-                }
+                // Toggling out of Navigate mode: closing must land in Terminal
+                // mode, opening must land in the panel.
+                leave_navigate_mode(&mut self.state);
+                self.toggle_git_sidebar();
             }
             NavigateAction::CyclePaneNext => {
                 self.cycle_pane_via_api(false);
@@ -1872,8 +1863,8 @@ pub(super) fn execute_navigate_action_in_context(
             leave_navigate_mode(state);
         }
         NavigateAction::ToggleGitSidebar => {
-            state.git_sidebar_closed = !state.git_sidebar_closed;
             leave_navigate_mode(state);
+            state.toggle_git_sidebar_visibility();
         }
         NavigateAction::CyclePaneNext => {
             state.cycle_pane(false);

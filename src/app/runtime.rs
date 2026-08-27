@@ -621,6 +621,9 @@ impl App {
             include_git_refresh
                 .then(|| self.git_refresh_deadline())
                 .flatten(),
+            include_git_refresh
+                .then(|| self.git_sidebar_refresh_deadline())
+                .flatten(),
             self.next_auto_update_check,
             self.next_agent_manifest_update_check,
             self.agent_metadata_deadline,
