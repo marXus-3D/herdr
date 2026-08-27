@@ -13,7 +13,6 @@ pub struct GitSidebarState {
     pub selected_index: usize,
     pub scroll_changes: usize,
     pub scroll_graph: usize,
-    pub selected_item: Option<GitSidebarItem>,
     pub is_refreshing: bool,
     pub error_message: Option<String>,
 }
@@ -42,12 +41,7 @@ pub struct GitCommitGraphEntry {
     pub graph_columns: Vec<char>, // ascii graph column representations
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GitSidebarItem {
-    StagedFile(usize),
-    UnstagedFile(usize),
-    Commit(usize),
-}
+
 
 impl GitSidebarState {
     pub fn spawn_refresh(

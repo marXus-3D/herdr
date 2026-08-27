@@ -702,7 +702,7 @@ impl AppState {
                     if !handled && !self.git_sidebar_state.recent_commits.is_empty() {
                         if mouse.row == current_y {
                             self.git_sidebar_state.section_collapsed_commits = !self.git_sidebar_state.section_collapsed_commits;
-                            handled = true;
+                            // handled = true;
                         }
                     }
                     return None;

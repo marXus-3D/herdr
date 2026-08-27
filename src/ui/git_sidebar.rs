@@ -10,7 +10,7 @@ use crate::terminal::TerminalRuntimeRegistry;
 
 pub fn render_git_sidebar(
     app: &AppState,
-    terminal_runtimes: &TerminalRuntimeRegistry,
+    _terminal_runtimes: &TerminalRuntimeRegistry,
     frame: &mut Frame,
     area: Rect,
 ) {
@@ -135,9 +135,9 @@ pub fn render_git_sidebar(
 }
 
 pub fn render_git_sidebar_collapsed(
-    app: &AppState,
-    frame: &mut Frame,
-    area: Rect,
+    _app: &AppState,
+    _frame: &mut Frame,
+    _area: Rect,
 ) {
     // Phase 4 implementation
 }
