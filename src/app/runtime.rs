@@ -362,6 +362,7 @@ impl App {
         changed |= self.clear_due_selection_highlight(now);
 
         self.start_git_status_refresh_if_due(now);
+        self.start_git_sidebar_refresh_if_due(now);
 
         if self
             .next_auto_update_check

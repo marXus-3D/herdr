@@ -536,3 +536,28 @@ mod tests {
         )
     }
 }
+
+impl App {
+    pub(crate) fn start_git_sidebar_refresh_if_due(&mut self, now: Instant) {
+        // Only refresh if the sidebar is open
+        if self.state.git_sidebar_closed {
+            return;
+        }
+        // Don't spawn multiple
+        if self.state.git_sidebar_state.is_refreshing {
+            return;
+        }
+        
+        let Some(ws) = self.state.active_workspace() else { return; };
+        let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) else { return; };
+
+        // FIXME: we should track the last refresh time for git_sidebar to avoid spamming
+        // For now we just tie it to git_refresh_deadline which runs roughly every 3-10s
+        let Some(deadline) = self.git_refresh_deadline() else { return; };
+        if now < deadline { return; }
+
+        self.state.git_sidebar_state.is_refreshing = true;
+        let tx = self.event_tx.clone();
+        crate::app::git_sidebar::GitSidebarState::spawn_refresh(cwd, tx);
+    }
+}

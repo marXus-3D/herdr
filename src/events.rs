@@ -62,6 +62,12 @@ pub enum AppEvent {
         agent: Agent,
         observed_at: Instant,
     },
+    GitSidebarRefreshComplete {
+        staged: Vec<crate::app::git_sidebar::GitFileStatus>,
+        unstaged: Vec<crate::app::git_sidebar::GitFileStatus>,
+        commits: Vec<crate::app::git_sidebar::GitCommitGraphEntry>,
+        error: Option<String>,
+    },
     /// Fallback detector state changed in a pane.
     StateChanged {
         pane_id: PaneId,
