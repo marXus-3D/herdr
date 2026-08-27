@@ -648,12 +648,18 @@ impl GitSidebarState {
 // Background git probes
 // ---------------------------------------------------------------------------
 
-/// Build a `git` invocation that can never block on a prompt or a pager and
-/// never takes the index lock for a read-only query.
-fn git_command(cwd: &Path) -> Command {
-    let mut command = Command::new("git");
+/// Build a `git` invocation that can never block on a prompt or a pager, never
+/// takes the index lock for a read-only query, and never flashes a console
+/// window on Windows.
+///
+/// Uses `-C` rather than `current_dir` so the child never depends on being able
+/// to chdir, matching how the rest of Herdr shells out to git.
+fn git_command(repo_root: &Path) -> Command {
+    let mut command = crate::noninteractive_process::command("git");
     command
-        .current_dir(cwd)
+        .arg("-C")
+        .arg(repo_root)
+        .arg("--no-pager")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_PAGER", "cat")
@@ -662,9 +668,8 @@ fn git_command(cwd: &Path) -> Command {
     command
 }
 
-fn run_git(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
-    let output = git_command(cwd)
-        .arg("--no-pager")
+fn run_git(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let output = git_command(repo_root)
         .args(args)
         .output()
         .map_err(|err| format!("git: {err}"))?;
@@ -857,27 +862,17 @@ fn collect_snapshot(cwd: PathBuf) -> GitSidebarSnapshot {
         ..GitSidebarSnapshot::default()
     };
 
-    let toplevel = match run_git(&cwd, &["rev-parse", "--show-toplevel"]) {
-        Ok(stdout) => {
-            let text = String::from_utf8_lossy(&stdout).trim().to_string();
-            if text.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(text))
-            }
-        }
-        Err(_) => None,
-    };
-
-    let Some(repo_root) = toplevel else {
-        // Not a repository (or no git binary): a clean empty state, not an error.
+    // Discover the repository the same way the workspace list does: walk up for
+    // `.git`, no subprocess. That keeps this panel's idea of "which repo" identical
+    // to the branch shown under the workspace name, resolves linked worktrees to
+    // their own checkout, and reports "not a repository" accurately even when the
+    // git binary is missing.
+    let Some(space) = crate::workspace::git_space_metadata(&cwd) else {
         return snapshot;
     };
 
-    snapshot.repo_name = repo_root
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| repo_root.to_string_lossy().into_owned());
+    let repo_root = space.repo_root;
+    snapshot.repo_name = space.repo_name;
     snapshot.repo_root = Some(repo_root.clone());
 
     match run_git(&repo_root, &["status", "--porcelain=v1", "--branch", "-z"]) {
@@ -969,7 +964,6 @@ pub fn spawn_action(
 
 fn run_action(repo_root: &Path, action: &GitSidebarAction) -> Result<(), String> {
     let mut command = git_command(repo_root);
-    command.arg("--no-pager");
     match action {
         GitSidebarAction::Stage(path) => {
             command.args(["add", "--"]).arg(path);
