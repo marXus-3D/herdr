@@ -10,6 +10,7 @@ pub struct GitSidebarState {
     pub section_collapsed_staged: bool,
     pub section_collapsed_changes: bool,
     pub section_collapsed_commits: bool,
+    pub selected_index: usize,
     pub scroll_changes: usize,
     pub scroll_graph: usize,
     pub selected_item: Option<GitSidebarItem>,

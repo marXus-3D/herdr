@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Rect, Layout, Constraint},
     Frame,
 };
 use ratatui::widgets::{Block, Borders, Paragraph, List, ListItem, ListState};
@@ -22,8 +22,24 @@ pub fn render_git_sidebar(
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(0),
+    ]).split(inner_area);
+
     let state = &app.git_sidebar_state;
+    
+    let input_bg = if state.selected_index == 0 && app.mode == crate::app::state::Mode::GitSidebar { Color::DarkGray } else { Color::Reset };
+    let input_text = if state.commit_message.is_empty() {
+        Span::styled("Message (Enter to commit)", Style::default().fg(Color::DarkGray).bg(input_bg))
+    } else {
+        Span::styled(&state.commit_message, Style::default().bg(input_bg))
+    };
+    let input_block = Paragraph::new(input_text).block(Block::default().borders(Borders::ALL));
+    frame.render_widget(input_block, chunks[0]);
+
     let mut items = Vec::new();
+    let mut idx = 1;
 
     // Staged changes
     if !state.staged_files.is_empty() {
@@ -41,11 +57,13 @@ pub fn render_git_sidebar(
                     crate::app::git_sidebar::GitFileStatusKind::Renamed => "R",
                     crate::app::git_sidebar::GitFileStatusKind::Untracked => "U",
                 };
+                let bg = if idx == state.selected_index && app.mode == crate::app::state::Mode::GitSidebar { Color::DarkGray } else { Color::Reset };
                 items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(format!("{} ", status_str), Style::default().fg(Color::Green)),
-                    Span::raw(path_str.into_owned()),
-                ])));
+                    Span::styled(format!("{} ", status_str), Style::default().fg(Color::Green).bg(bg)),
+                    Span::styled(path_str.into_owned(), Style::default().bg(bg)),
+                ])).style(Style::default().bg(bg)));
+                idx += 1;
             }
         }
     }
@@ -66,11 +84,13 @@ pub fn render_git_sidebar(
                     crate::app::git_sidebar::GitFileStatusKind::Renamed => "R",
                     crate::app::git_sidebar::GitFileStatusKind::Untracked => "U",
                 };
+                let bg = if idx == state.selected_index && app.mode == crate::app::state::Mode::GitSidebar { Color::DarkGray } else { Color::Reset };
                 items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(format!("{} ", status_str), Style::default().fg(Color::Yellow)),
-                    Span::raw(path_str.into_owned()),
-                ])));
+                    Span::styled(format!("{} ", status_str), Style::default().fg(Color::Yellow).bg(bg)),
+                    Span::styled(path_str.into_owned(), Style::default().bg(bg)),
+                ])).style(Style::default().bg(bg)));
+                idx += 1;
             }
         }
     }
@@ -84,14 +104,16 @@ pub fn render_git_sidebar(
         if !state.section_collapsed_commits {
             for commit in &state.recent_commits {
                 let graph_str: String = commit.graph_columns.iter().collect();
+                let bg = if idx == state.selected_index && app.mode == crate::app::state::Mode::GitSidebar { Color::DarkGray } else { Color::Reset };
                 items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(graph_str, Style::default().fg(Color::DarkGray)),
+                    Span::styled(graph_str, Style::default().fg(Color::DarkGray).bg(bg)),
                     Span::raw(" "),
-                    Span::styled(commit.hash.clone(), Style::default().fg(Color::Yellow)),
+                    Span::styled(commit.hash.clone(), Style::default().fg(Color::Yellow).bg(bg)),
                     Span::raw(" "),
-                    Span::raw(commit.subject.clone()),
-                ])));
+                    Span::styled(commit.subject.clone(), Style::default().bg(bg)),
+                ])).style(Style::default().bg(bg)));
+                idx += 1;
             }
         }
     }
@@ -109,7 +131,7 @@ pub fn render_git_sidebar(
     let mut list_state = ListState::default();
     // TODO: wire up scroll state
     let list = List::new(items);
-    frame.render_stateful_widget(list, inner_area, &mut list_state);
+    frame.render_stateful_widget(list, chunks[1], &mut list_state);
 }
 
 pub fn render_git_sidebar_collapsed(

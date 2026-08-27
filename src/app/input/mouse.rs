@@ -26,6 +26,9 @@ use super::{
 };
 
 pub(super) enum MouseAction {
+    GitSidebarStage(std::path::PathBuf),
+    GitSidebarUnstage(std::path::PathBuf),
+    GitSidebarDiff(std::path::PathBuf),
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -190,6 +193,12 @@ impl AppState {
             && mouse.column < sidebar.x + sidebar.width
             && mouse.row >= sidebar.y
             && mouse.row < sidebar.y + sidebar.height;
+
+        let git_sidebar = self.view.git_sidebar_rect;
+        let in_git_sidebar = mouse.column >= git_sidebar.x
+            && mouse.column < git_sidebar.x + git_sidebar.width
+            && mouse.row >= git_sidebar.y
+            && mouse.row < git_sidebar.y + git_sidebar.height;
 
         if self.handle_right_click_passthrough(terminal_runtimes, source_id, mouse, in_sidebar) {
             return None;
@@ -641,6 +650,62 @@ impl AppState {
                         self.mode = Mode::Terminal;
                         return Some(MouseAction::FocusPane { ws_idx, pane_id });
                     }
+                } else if in_git_sidebar {
+                    let git_sidebar = self.view.git_sidebar_rect;
+                    
+                    // Check if clicked the commit box
+                    if mouse.row >= git_sidebar.y + 1 && mouse.row < git_sidebar.y + 1 + 3 {
+                        self.state.git_sidebar_state.selected_index = 0;
+                        self.mode = Mode::GitSidebar;
+                        return None;
+                    }
+
+                    let mut current_y = git_sidebar.y + 1 + 3; // Top border + commit box
+                    let mut handled = false;
+                    
+                    if !self.git_sidebar_state.staged_files.is_empty() {
+                        if mouse.row == current_y {
+                            self.git_sidebar_state.section_collapsed_staged = !self.git_sidebar_state.section_collapsed_staged;
+                            handled = true;
+                        }
+                        current_y += 1;
+                        if !self.git_sidebar_state.section_collapsed_staged {
+                            for (i, file) in self.git_sidebar_state.staged_files.clone().iter().enumerate() {
+                                if !handled && mouse.row == current_y {
+                                    self.state.git_sidebar_state.selected_index = 1 + i;
+                                    self.mode = Mode::GitSidebar;
+                                    return Some(MouseAction::GitSidebarDiff(file.path.clone()));
+                                }
+                                current_y += 1;
+                            }
+                        }
+                    }
+                    
+                    if !handled && !self.git_sidebar_state.unstaged_files.is_empty() {
+                        if mouse.row == current_y {
+                            self.git_sidebar_state.section_collapsed_changes = !self.git_sidebar_state.section_collapsed_changes;
+                            handled = true;
+                        }
+                        current_y += 1;
+                        if !self.git_sidebar_state.section_collapsed_changes {
+                            for (i, file) in self.git_sidebar_state.unstaged_files.clone().iter().enumerate() {
+                                if !handled && mouse.row == current_y {
+                                    self.state.git_sidebar_state.selected_index = 1 + self.git_sidebar_state.staged_files.len() + i;
+                                    self.mode = Mode::GitSidebar;
+                                    return Some(MouseAction::GitSidebarDiff(file.path.clone()));
+                                }
+                                current_y += 1;
+                            }
+                        }
+                    }
+                    
+                    if !handled && !self.git_sidebar_state.recent_commits.is_empty() {
+                        if mouse.row == current_y {
+                            self.git_sidebar_state.section_collapsed_commits = !self.git_sidebar_state.section_collapsed_commits;
+                            handled = true;
+                        }
+                    }
+                    return None;
                 } else if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     if self.mode != Mode::Terminal {
                         self.mode = Mode::Terminal;

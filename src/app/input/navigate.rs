@@ -404,6 +404,15 @@ impl App {
             }
             NavigateAction::ToggleGitSidebar => {
                 self.state.git_sidebar_closed = !self.state.git_sidebar_closed;
+                if !self.state.git_sidebar_closed {
+                    self.state.mode = Mode::GitSidebar;
+                    self.state.git_sidebar_state.is_refreshing = false;
+                    self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
+                } else {
+                    if self.state.mode == Mode::GitSidebar {
+                        self.state.mode = Mode::Terminal;
+                    }
+                }
                 leave_navigate_mode(&mut self.state);
             }
             NavigateAction::CyclePaneNext => {

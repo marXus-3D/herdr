@@ -117,6 +117,7 @@ impl App {
                 Mode::Navigator => {
                     handle_navigator_key(&mut self.state, &self.terminal_runtimes, key_event)
                 }
+                Mode::GitSidebar => self.handle_git_sidebar_key(key_event),
                 Mode::Terminal => unreachable!(),
             },
         }
@@ -415,6 +416,20 @@ impl App {
                     .handle_mouse(&mut self.terminal_runtimes, source_id, mouse)
             {
                 match action {
+                    MouseAction::GitSidebarStage(path) => {
+                        let _ = self.run_git_sidebar_action("add", &path);
+                    }
+                    MouseAction::GitSidebarUnstage(path) => {
+                        let _ = self.run_git_sidebar_action("restore", &path);
+                    }
+                    MouseAction::GitSidebarDiff(path) => {
+                        if let Some(ws) = self.state.active_workspace() {
+                            if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
+                                let cmd = format!("git diff {}", path.to_string_lossy());
+                                let _ = self.spawn_popup_shell_command(&cmd, Some(cwd), vec![], crate::app::popup::PopupGeometry::default());
+                            }
+                        }
+                    }
                     MouseAction::NewWorkspace => {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }
@@ -1065,5 +1080,114 @@ mod tests {
 
         state.mode = Mode::ConfirmClose;
         assert!(!modal_paste_target_active(&state));
+    }
+}
+
+impl crate::app::App {
+    pub(crate) fn handle_git_sidebar_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        match (key.code, key.modifiers) {
+            (KeyCode::Up, _) => {
+                let state = &mut self.state.git_sidebar_state;
+                if state.selected_index > 0 {
+                    state.selected_index -= 1;
+                }
+            }
+            (KeyCode::Down, _) => {
+                let state = &mut self.state.git_sidebar_state;
+                let max = state.staged_files.len() + state.unstaged_files.len() + state.recent_commits.len();
+                if state.selected_index < max { // simple approx for now
+                    state.selected_index += 1;
+                }
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                if self.state.git_sidebar_state.selected_index == 0 {
+                    self.state.git_sidebar_state.commit_message.push(c);
+                } else {
+                    if c == ' ' {
+                        let state = &self.state.git_sidebar_state;
+                        let mut idx = 1;
+                        let mut action: Option<super::input::mouse::MouseAction> = None;
+                        
+                        if !state.section_collapsed_staged {
+                            for file in &state.staged_files {
+                                if idx == state.selected_index {
+                                    action = Some(super::input::mouse::MouseAction::GitSidebarUnstage(file.path.clone()));
+                                }
+                                idx += 1;
+                            }
+                        }
+                        if !state.section_collapsed_changes {
+                            for file in &state.unstaged_files {
+                                if idx == state.selected_index {
+                                    action = Some(super::input::mouse::MouseAction::GitSidebarStage(file.path.clone()));
+                                }
+                                idx += 1;
+                            }
+                        }
+                        
+                        if let Some(super::input::mouse::MouseAction::GitSidebarStage(path)) = action {
+                            let _ = self.run_git_sidebar_action("add", &path);
+                        } else if let Some(super::input::mouse::MouseAction::GitSidebarUnstage(path)) = action {
+                            let _ = self.run_git_sidebar_action("restore", &path);
+                        }
+                    } else if c == 'j' {
+                        let state = &mut self.state.git_sidebar_state;
+                        let max = state.staged_files.len() + state.unstaged_files.len() + state.recent_commits.len();
+                        if state.selected_index < max { state.selected_index += 1; }
+                    } else if c == 'k' {
+                        let state = &mut self.state.git_sidebar_state;
+                        if state.selected_index > 0 { state.selected_index -= 1; }
+                    }
+                }
+            }
+            (KeyCode::Backspace, _) => {
+                self.state.git_sidebar_state.commit_message.pop();
+            }
+            (KeyCode::Enter, _) => {
+                if self.state.git_sidebar_state.selected_index == 0 {
+                    if !self.state.git_sidebar_state.commit_message.is_empty() {
+                        let mut cmd = std::process::Command::new("git");
+                        if let Some(ws) = self.state.active_workspace() {
+                            if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
+                                cmd.current_dir(cwd);
+                                cmd.arg("commit").arg("-m").arg(self.state.git_sidebar_state.commit_message.clone());
+                                let _ = cmd.output();
+                                self.state.git_sidebar_state.commit_message.clear();
+                                self.state.git_sidebar_state.is_refreshing = false;
+                                self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
+                            }
+                        }
+                    }
+                } else {
+                    let state = &self.state.git_sidebar_state;
+                    let mut idx = 1;
+                    let mut path_to_diff: Option<std::path::PathBuf> = None;
+                    
+                    if !state.section_collapsed_staged {
+                        for file in &state.staged_files {
+                            if idx == state.selected_index { path_to_diff = Some(file.path.clone()); }
+                            idx += 1;
+                        }
+                    }
+                    if !state.section_collapsed_changes {
+                        for file in &state.unstaged_files {
+                            if idx == state.selected_index { path_to_diff = Some(file.path.clone()); }
+                            idx += 1;
+                        }
+                    }
+                    if let Some(path) = path_to_diff {
+                        if let Some(ws) = self.state.active_workspace() {
+                            if let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) {
+                                // Show git diff in a popup pane
+                                let cmd = format!("git diff {}", path.to_string_lossy());
+                                let _ = self.spawn_popup_shell_command(&cmd, Some(cwd), vec![], crate::app::popup::PopupGeometry::default());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }

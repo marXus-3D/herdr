@@ -907,6 +907,7 @@ pub enum Mode {
     GlobalMenu,
     KeybindHelp,
     Navigator,
+    GitSidebar,
 }
 
 impl Mode {

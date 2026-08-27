@@ -560,4 +560,23 @@ impl App {
         let tx = self.event_tx.clone();
         crate::app::git_sidebar::GitSidebarState::spawn_refresh(cwd, tx);
     }
+
+    pub(crate) fn run_git_sidebar_action(&mut self, cmd: &str, path: &std::path::Path) -> std::io::Result<()> {
+        let Some(ws) = self.state.active_workspace() else { return Ok(()) };
+        let Some(cwd) = ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes) else { return Ok(()) };
+        
+        let mut command = std::process::Command::new("git");
+        command.current_dir(cwd);
+        if cmd == "restore" {
+            command.arg("restore").arg("--staged").arg(path);
+        } else {
+            command.arg(cmd).arg(path);
+        }
+        let _ = command.output();
+        
+        // Force refresh
+        self.state.git_sidebar_state.is_refreshing = false;
+        self.start_git_sidebar_refresh_if_due(std::time::Instant::now());
+        Ok(())
+    }
 }
