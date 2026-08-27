@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 mod dialogs;
+pub(crate) mod git_sidebar;
 mod keybind_help;
 mod menus;
 mod mobile;
@@ -25,6 +26,10 @@ mod widgets;
 use self::dialogs::{
     render_confirm_close_overlay, render_new_linked_worktree_overlay,
     render_open_existing_worktree_overlay, render_remove_worktree_overlay, render_rename_overlay,
+};
+use self::git_sidebar::{
+    compute_git_sidebar_row_areas, render_git_menu, render_git_sidebar,
+    render_git_sidebar_collapsed,
 };
 use self::keybind_help::render_keybind_help_overlay;
 use self::menus::{
@@ -89,6 +94,12 @@ pub(crate) use self::{
 };
 
 pub(crate) use self::{
+    git_sidebar::{
+        collapsed_git_sidebar_toggle_rect, expanded_git_sidebar_toggle_rect, git_menu_contains,
+        git_menu_layout, git_menu_row_at, git_row_icon_rects, git_sidebar_button_rects,
+        git_sidebar_layout, git_sidebar_list_rect, git_sidebar_scroll_metrics,
+        git_sidebar_scrollbar_rect, GitRowIcon, GitSidebarButton,
+    },
     keybind_help::keybind_help_lines,
     mobile::{
         mobile_switcher_areas, mobile_switcher_max_scroll, mobile_switcher_target_at,
@@ -234,8 +245,22 @@ fn compute_view_internal(
             .clamp(app.sidebar_min_width, app.sidebar_max_width)
     };
 
-    let [sidebar_area, main_area] =
-        Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(1)]).areas(area);
+    let git_sidebar_w = if app.git_sidebar_closed {
+        match app.git_sidebar_collapsed_mode {
+            crate::config::SidebarCollapsedModeConfig::Compact => COLLAPSED_WIDTH,
+            crate::config::SidebarCollapsedModeConfig::Hidden => 0,
+        }
+    } else {
+        app.git_sidebar_width
+            .clamp(app.git_sidebar_min_width, app.git_sidebar_max_width)
+    };
+
+    let [sidebar_area, main_area, git_sidebar_area] = Layout::horizontal([
+        Constraint::Length(sidebar_w),
+        Constraint::Min(1),
+        Constraint::Length(git_sidebar_w),
+    ])
+    .areas(area);
 
     let (tab_bar_rect, terminal_area) = app
         .active
@@ -259,6 +284,24 @@ fn compute_view_internal(
         Vec::new()
     } else {
         compute_workspace_card_areas(app, sidebar_area)
+    };
+
+    // Keep the source-control cursor and scroll offset consistent with the row
+    // count and viewport before laying its rows out.
+    let git_sidebar_rows = if app.git_sidebar_closed {
+        app.git_sidebar_state.scroll = 0;
+        Vec::new()
+    } else {
+        let viewport_rows = git_sidebar_layout(git_sidebar_area).list.height as usize;
+        let state = &mut app.git_sidebar_state;
+        state.clamp_selection();
+        // Only chase the cursor when it just moved, so wheel scrolling can look
+        // away from the selection the way the workspace list does.
+        if std::mem::take(&mut state.follow_selection) {
+            state.scroll_selection_into_view(viewport_rows);
+        }
+        state.clamp_scroll(viewport_rows);
+        compute_git_sidebar_row_areas(&app.git_sidebar_state, git_sidebar_area)
     };
 
     let tab_bar_view = app
@@ -307,6 +350,8 @@ fn compute_view_internal(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Desktop,
         sidebar_rect: sidebar_area,
+        git_sidebar_rect: git_sidebar_area,
+        git_sidebar_rows,
         workspace_card_areas,
         tab_bar_rect,
         tab_hit_areas: tab_bar_view.tab_hit_areas,
@@ -370,6 +415,8 @@ fn compute_mobile_view(
     app.view = crate::app::ViewState {
         layout: ViewLayout::Mobile,
         sidebar_rect: Rect::default(),
+        git_sidebar_rect: Rect::default(),
+        git_sidebar_rows: Vec::new(),
         workspace_card_areas: Vec::new(),
         tab_bar_rect: Rect::default(),
         tab_hit_areas: Vec::new(),
@@ -457,6 +504,7 @@ pub fn render_with_runtime_registry(
         Mode::GlobalMenu => render_global_launcher_menu(app, frame),
         Mode::KeybindHelp => render_keybind_help_overlay(app, frame),
         Mode::Navigator => render_navigator_overlay(app, terminal_runtimes, frame),
+        Mode::GitSidebar => render_git_menu(app, frame),
         Mode::Terminal => {}
     }
 }
@@ -468,11 +516,20 @@ fn render_navigation_chrome(
 ) {
     if app.view.layout == ViewLayout::Mobile {
         render_mobile_header(app, terminal_runtimes, frame, app.view.mobile_header_rect);
-    } else if app.view.sidebar_rect.width > 0 {
-        if app.sidebar_collapsed {
-            render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
-        } else {
-            render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+    } else {
+        if app.view.sidebar_rect.width > 0 {
+            if app.sidebar_collapsed {
+                render_sidebar_collapsed(app, frame, app.view.sidebar_rect);
+            } else {
+                render_sidebar(app, terminal_runtimes, frame, app.view.sidebar_rect);
+            }
+        }
+        if app.view.git_sidebar_rect.width > 0 {
+            if app.git_sidebar_closed {
+                render_git_sidebar_collapsed(app, frame, app.view.git_sidebar_rect);
+            } else {
+                render_git_sidebar(app, frame, app.view.git_sidebar_rect);
+            }
         }
     }
 }

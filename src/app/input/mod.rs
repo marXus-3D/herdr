@@ -117,6 +117,7 @@ impl App {
                 Mode::Navigator => {
                     handle_navigator_key(&mut self.state, &self.terminal_runtimes, key_event)
                 }
+                Mode::GitSidebar => self.handle_git_sidebar_key(key_event),
                 Mode::Terminal => unreachable!(),
             },
         }
@@ -241,6 +242,15 @@ impl App {
                     return false;
                 }
                 insert_keybind_help_query_text(&mut self.state, text);
+                true
+            }
+            Mode::GitSidebar => {
+                if self.state.git_sidebar_state.focus
+                    != crate::app::git_sidebar::GitSidebarFocus::Message
+                {
+                    return false;
+                }
+                self.state.git_sidebar_state.insert_commit_text(text);
                 true
             }
             Mode::Copy => {
@@ -380,6 +390,26 @@ impl App {
             }
         }
 
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && self.state.on_git_sidebar_divider(mouse.column, mouse.row)
+        {
+            let now = std::time::Instant::now();
+            let is_double_click = self
+                .last_git_sidebar_divider_click
+                .is_some_and(|last| now.duration_since(last) <= super::SIDEBAR_DOUBLE_CLICK_WINDOW);
+            self.last_git_sidebar_divider_click = Some(now);
+
+            if is_double_click {
+                self.state.git_sidebar_width = crate::config::DEFAULT_GIT_SIDEBAR_WIDTH.clamp(
+                    self.state.git_sidebar_min_width,
+                    self.state.git_sidebar_max_width,
+                );
+                self.state.mark_session_dirty();
+                self.state.drag = None;
+                return;
+            }
+        }
+
         if self.handle_modified_url_click(source_id, mouse) {
             return;
         }
@@ -397,6 +427,16 @@ impl App {
                     .handle_mouse(&mut self.terminal_runtimes, source_id, mouse)
             {
                 match action {
+                    MouseAction::GitSidebarToggleStage => self.toggle_git_sidebar_stage(),
+                    MouseAction::GitSidebarOpenDiff => self.open_git_sidebar_diff(),
+                    MouseAction::GitSidebarDiscard => {
+                        self.discard_selected_git_sidebar_file()
+                    }
+                    MouseAction::GitSidebarButtonPressed(button) => {
+                        self.activate_git_sidebar_button(button)
+                    }
+                    MouseAction::GitSidebarMenuActivate => self.activate_git_sidebar_menu_item(),
+                    MouseAction::GitSidebarRowMenu => self.open_git_sidebar_row_menu(),
                     MouseAction::NewWorkspace => {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }
@@ -742,6 +782,9 @@ pub(crate) fn modal_paste_target_active(state: &AppState) -> bool {
             .is_some_and(|open| open.search_focused),
         Mode::Navigator => state.navigator.search_focused,
         Mode::KeybindHelp => state.keybind_help.search_focused,
+        Mode::GitSidebar => {
+            state.git_sidebar_state.focus == crate::app::git_sidebar::GitSidebarFocus::Message
+        }
         Mode::Copy => state
             .copy_mode
             .as_ref()

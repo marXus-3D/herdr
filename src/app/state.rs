@@ -716,6 +716,18 @@ pub struct WorkspaceCardArea {
     pub indented: bool,
 }
 
+/// One drawn line of the source-control sidebar and the screen row it occupies.
+///
+/// Computed during `compute_view` so rendering and mouse hit-testing share a
+/// single source of truth for where each row landed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GitSidebarRowArea {
+    /// Index into `GitSidebarState::rows()`.
+    pub index: usize,
+    pub row: crate::app::git_sidebar::GitSidebarRow,
+    pub rect: Rect,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeCreateState {
     pub source_workspace_id: String,
@@ -870,6 +882,9 @@ pub enum ViewLayout {
 pub struct ViewState {
     pub layout: ViewLayout,
     pub sidebar_rect: Rect,
+    pub git_sidebar_rect: Rect,
+    /// Visible rows of the source-control sidebar, in draw order.
+    pub git_sidebar_rows: Vec<GitSidebarRowArea>,
     pub workspace_card_areas: Vec<WorkspaceCardArea>,
     pub tab_bar_rect: Rect,
     pub tab_hit_areas: Vec<Rect>,
@@ -906,6 +921,7 @@ pub enum Mode {
     GlobalMenu,
     KeybindHelp,
     Navigator,
+    GitSidebar,
 }
 
 impl Mode {
@@ -1234,6 +1250,7 @@ pub(crate) enum DragTarget {
     },
     SidebarDivider,
     SidebarSectionDivider,
+    GitSidebarDivider,
 }
 
 /// Active mouse drag on a split border or sidebar divider.
@@ -1526,6 +1543,15 @@ pub struct AppState {
     pub sidebar_width_auto: bool,
     pub sidebar_collapsed: bool,
     pub sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
+
+    pub git_sidebar_width: u16,
+    pub git_sidebar_min_width: u16,
+    pub git_sidebar_max_width: u16,
+    pub git_sidebar_closed: bool,
+    pub git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig,
+    pub git_sidebar_escape_to_dismiss: bool,
+    pub git_sidebar_state: crate::app::git_sidebar::GitSidebarState,
+
     /// Ratio of sidebar height allocated to the workspaces section.
     pub sidebar_section_split: f32,
     pub agent_panel_sort: AgentPanelSort,
@@ -1879,6 +1905,8 @@ impl AppState {
             view: ViewState {
                 layout: ViewLayout::Desktop,
                 sidebar_rect: Rect::default(),
+                git_sidebar_rect: Rect::default(),
+                git_sidebar_rows: Vec::new(),
                 workspace_card_areas: Vec::new(),
                 tab_bar_rect: Rect::default(),
                 tab_hit_areas: Vec::new(),
@@ -1922,6 +1950,13 @@ impl AppState {
             sidebar_width_auto: false,
             sidebar_collapsed: false,
             sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
+            git_sidebar_width: crate::config::DEFAULT_GIT_SIDEBAR_WIDTH,
+            git_sidebar_min_width: crate::config::MIN_GIT_SIDEBAR_WIDTH,
+            git_sidebar_max_width: crate::config::MAX_GIT_SIDEBAR_WIDTH,
+            git_sidebar_closed: false,
+            git_sidebar_collapsed_mode: crate::config::SidebarCollapsedModeConfig::Compact,
+            git_sidebar_escape_to_dismiss: true,
+            git_sidebar_state: crate::app::git_sidebar::GitSidebarState::default(),
             sidebar_section_split: 0.5,
             agent_panel_sort: AgentPanelSort::Spaces,
             status_indicators: crate::config::StatusIndicatorStyle::Dots,

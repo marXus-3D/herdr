@@ -62,6 +62,14 @@ pub enum AppEvent {
         agent: Agent,
         observed_at: Instant,
     },
+    /// A source-control sidebar probe finished; carries the whole repository
+    /// snapshot so the panel swaps state in one move.
+    GitSidebarRefreshComplete(Box<crate::app::git_sidebar::GitSidebarSnapshot>),
+    /// A mutating source-control command (stage, commit, discard, ...) finished.
+    GitSidebarActionComplete {
+        error: Option<String>,
+        message: Option<String>,
+    },
     /// Fallback detector state changed in a pane.
     StateChanged {
         pane_id: PaneId,

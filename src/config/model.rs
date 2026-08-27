@@ -11,6 +11,14 @@ use super::{
 
 pub const MAX_TOAST_DELAY_SECONDS: u64 = 3600;
 
+/// Default width of the source-control sidebar, and the width a double-click
+/// on its divider restores.
+pub const DEFAULT_GIT_SIDEBAR_WIDTH: u16 = 34;
+/// Narrowest useful source-control sidebar: a status badge plus a short name.
+pub const MIN_GIT_SIDEBAR_WIDTH: u16 = 22;
+/// Widest the source-control sidebar can be dragged.
+pub const MAX_GIT_SIDEBAR_WIDTH: u16 = 60;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannelConfig {
@@ -457,6 +465,8 @@ pub struct KeysConfig {
     pub resize_pane_right: BindingConfig,
     /// Toggle sidebar collapse. Default: "prefix+b"
     pub toggle_sidebar: BindingConfig,
+    /// Toggle Git sidebar. Default: "prefix+shift+b"
+    pub toggle_git_sidebar: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
     /// Prefix-mode custom command bindings.
@@ -588,6 +598,8 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     toggle_sidebar: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    toggle_git_sidebar: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -669,6 +681,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(resize_pane_up);
         apply_field!(resize_pane_right);
         apply_field!(toggle_sidebar);
+        apply_field!(toggle_git_sidebar);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -773,6 +786,7 @@ impl KeysConfig {
         copy_effective_action_field!(resize_pane_up, keybinds.resize_pane_up);
         copy_effective_action_field!(resize_pane_right, keybinds.resize_pane_right);
         copy_effective_action_field!(toggle_sidebar, keybinds.toggle_sidebar);
+        copy_effective_action_field!(toggle_git_sidebar, keybinds.toggle_git_sidebar);
         copy_user_field!(indexed);
 
         profile
@@ -857,6 +871,20 @@ pub struct UiConfig {
     pub sidebar_start_collapsed: bool,
     /// Collapsed sidebar presentation. Default: compact.
     pub sidebar_collapsed_mode: SidebarCollapsedModeConfig,
+
+    /// Source-control sidebar width. Default: 34.
+    pub git_sidebar_width: u16,
+    /// Minimum source-control sidebar width. Default: 22.
+    pub git_sidebar_min_width: u16,
+    /// Maximum source-control sidebar width. Default: 60.
+    pub git_sidebar_max_width: u16,
+    /// Start with the source-control sidebar closed. Default: false.
+    pub git_sidebar_start_closed: bool,
+    /// Closed source-control sidebar presentation. Default: compact.
+    pub git_sidebar_collapsed_mode: SidebarCollapsedModeConfig,
+    /// Close the source-control sidebar on Escape. Default: true.
+    pub git_sidebar_escape_to_dismiss: bool,
+
     /// Terminal width at or below which Herdr uses the mobile single-column layout. Default: 64.
     pub mobile_width_threshold: u16,
     /// Capture mouse input for Herdr's mouse UI. Default: true.
@@ -1083,6 +1111,7 @@ impl Default for KeysConfig {
             resize_pane_up: BindingConfig::empty(),
             resize_pane_right: BindingConfig::empty(),
             toggle_sidebar: BindingConfig::one("prefix+b"),
+            toggle_git_sidebar: BindingConfig::one("prefix+shift+b"),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),
@@ -1106,6 +1135,12 @@ impl Default for UiConfig {
             sidebar_max_width: 36,
             sidebar_start_collapsed: false,
             sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
+            git_sidebar_width: DEFAULT_GIT_SIDEBAR_WIDTH,
+            git_sidebar_min_width: MIN_GIT_SIDEBAR_WIDTH,
+            git_sidebar_max_width: MAX_GIT_SIDEBAR_WIDTH,
+            git_sidebar_start_closed: false,
+            git_sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
+            git_sidebar_escape_to_dismiss: true,
             mobile_width_threshold: DEFAULT_MOBILE_WIDTH_THRESHOLD,
             mouse_capture: true,
             copy_on_select: true,

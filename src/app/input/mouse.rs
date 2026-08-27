@@ -25,7 +25,22 @@ use super::{
     ScrollbarClickTarget, TAB_DRAG_THRESHOLD, WORKSPACE_DRAG_THRESHOLD,
 };
 
+/// Rows the source-control list moves per wheel notch.
+const GIT_SIDEBAR_WHEEL_ROWS: isize = 3;
+
 pub(super) enum MouseAction {
+    /// Stage or unstage the source-control row that was just selected.
+    GitSidebarToggleStage,
+    /// Open the diff (or `git show`) for the row that was just selected.
+    GitSidebarOpenDiff,
+    /// Discard (or delete, when untracked) the row that was just selected.
+    GitSidebarDiscard,
+    /// Run an action-bar button.
+    GitSidebarButtonPressed(crate::ui::GitSidebarButton),
+    /// Activate the dropdown row that was just selected.
+    GitSidebarMenuActivate,
+    /// Open the dropdown for the source-control row that was just selected.
+    GitSidebarRowMenu,
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -191,7 +206,18 @@ impl AppState {
             && mouse.row >= sidebar.y
             && mouse.row < sidebar.y + sidebar.height;
 
-        if self.handle_right_click_passthrough(terminal_runtimes, source_id, mouse, in_sidebar) {
+        let git_sidebar = self.view.git_sidebar_rect;
+        let in_git_sidebar = mouse.column >= git_sidebar.x
+            && mouse.column < git_sidebar.x + git_sidebar.width
+            && mouse.row >= git_sidebar.y
+            && mouse.row < git_sidebar.y + git_sidebar.height;
+
+        if self.handle_right_click_passthrough(
+            terminal_runtimes,
+            source_id,
+            mouse,
+            in_sidebar || in_git_sidebar,
+        ) {
             return None;
         }
 
@@ -423,11 +449,26 @@ impl AppState {
                     return None;
                 }
 
+                // An open source-control dropdown is modal over the whole
+                // screen: it hangs outside the panel, so it has to be checked
+                // before anything that owns those columns normally.
+                if self.git_sidebar_state.menu.is_some() {
+                    return self.handle_git_menu_click(mouse.column, mouse.row);
+                }
+
                 if self.on_sidebar_divider(mouse.column, mouse.row) {
                     self.drag = Some(DragState {
                         target: DragTarget::SidebarDivider,
                     });
                     self.set_manual_sidebar_width(mouse.column);
+                    return None;
+                }
+
+                if self.on_git_sidebar_divider(mouse.column, mouse.row) {
+                    self.drag = Some(DragState {
+                        target: DragTarget::GitSidebarDivider,
+                    });
+                    self.set_manual_git_sidebar_width(mouse.column);
                     return None;
                 }
 
@@ -517,6 +558,11 @@ impl AppState {
                         self.request_new_tab = true;
                         self.mode = Mode::Terminal;
                     }
+                    return None;
+                }
+
+                if self.on_git_sidebar_toggle(mouse.column, mouse.row) {
+                    self.toggle_git_sidebar_visibility();
                     return None;
                 }
 
@@ -632,6 +678,8 @@ impl AppState {
                         self.mode = Mode::Terminal;
                         return Some(MouseAction::FocusPane { ws_idx, pane_id });
                     }
+                } else if in_git_sidebar {
+                    return self.handle_git_sidebar_click(mouse.column, mouse.row);
                 } else if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     if self.mode != Mode::Terminal {
                         self.mode = Mode::Terminal;
@@ -819,6 +867,9 @@ impl AppState {
                         DragTarget::SidebarDivider => {
                             self.set_manual_sidebar_width(mouse.column);
                         }
+                        DragTarget::GitSidebarDivider => {
+                            self.set_manual_git_sidebar_width(mouse.column);
+                        }
                         DragTarget::SidebarSectionDivider => {
                             self.set_sidebar_section_split(mouse.row);
                         }
@@ -967,6 +1018,39 @@ impl AppState {
             }
 
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                if self.git_sidebar_state.menu.is_some() =>
+            {
+                let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
+                    -GIT_SIDEBAR_WHEEL_ROWS
+                } else {
+                    GIT_SIDEBAR_WHEEL_ROWS
+                };
+                let viewport = self
+                    .git_sidebar_state
+                    .menu
+                    .as_ref()
+                    .and_then(|menu| {
+                        crate::ui::git_menu_layout(self.view.git_sidebar_rect, menu)
+                    })
+                    .map(|layout| layout.list.height as usize)
+                    .unwrap_or(0);
+                if let Some(menu) = self.git_sidebar_state.menu.as_mut() {
+                    menu.scroll_by(delta, viewport);
+                }
+            }
+
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if in_git_sidebar => {
+                let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
+                    -GIT_SIDEBAR_WHEEL_ROWS
+                } else {
+                    GIT_SIDEBAR_WHEEL_ROWS
+                };
+                let viewport = crate::ui::git_sidebar_list_rect(self.view.git_sidebar_rect).height;
+                self.git_sidebar_state
+                    .scroll_by(delta, usize::from(viewport));
+            }
+
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
                 if !in_sidebar && self.scroll_selection_with_wheel(terminal_runtimes, mouse) => {}
 
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if !in_sidebar => {
@@ -976,7 +1060,7 @@ impl AppState {
             }
 
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
-                if self.mode == Mode::Terminal && !in_sidebar =>
+                if self.mode == Mode::Terminal && !in_sidebar && !in_git_sidebar =>
             {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     self.forward_pane_reported_wheel(terminal_runtimes, &info, mouse);
@@ -1029,7 +1113,9 @@ impl AppState {
                 }
             }
 
-            MouseEventKind::Moved if self.mode == Mode::Terminal && !in_sidebar => {
+            MouseEventKind::Moved
+                if self.mode == Mode::Terminal && !in_sidebar && !in_git_sidebar =>
+            {
                 if let Some(info) = self.pane_at(mouse.column, mouse.row).cloned() {
                     let _ = self.forward_pane_mouse_motion(terminal_runtimes, &info, mouse);
                 }
@@ -1104,7 +1190,11 @@ impl AppState {
                 }
             }
 
-            MouseEventKind::Down(MouseButton::Right) if !in_sidebar => {
+            MouseEventKind::Down(MouseButton::Right) if in_git_sidebar => {
+                return self.handle_git_sidebar_right_click(mouse.column, mouse.row);
+            }
+
+            MouseEventKind::Down(MouseButton::Right) if !in_sidebar && !in_git_sidebar => {
                 if let Some(info) = self.pane_mouse_target(mouse.column, mouse.row).cloned() {
                     let ws_idx = self.active?;
                     let tab_idx = self

@@ -402,6 +402,12 @@ impl App {
                 self.state.sidebar_collapsed = !self.state.sidebar_collapsed;
                 leave_navigate_mode(&mut self.state);
             }
+            NavigateAction::ToggleGitSidebar => {
+                // Toggling out of Navigate mode: closing must land in Terminal
+                // mode, opening must land in the panel.
+                leave_navigate_mode(&mut self.state);
+                self.toggle_git_sidebar();
+            }
             NavigateAction::CyclePaneNext => {
                 self.cycle_pane_via_api(false);
                 leave_navigate_mode(&mut self.state);
@@ -1446,6 +1452,7 @@ pub(crate) enum NavigateAction {
     ResizePaneUp,
     ResizePaneRight,
     ToggleSidebar,
+    ToggleGitSidebar,
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
@@ -1596,6 +1603,7 @@ fn non_indexed_action_for_key(
         (&kb.resize_pane_up, NavigateAction::ResizePaneUp),
         (&kb.resize_pane_right, NavigateAction::ResizePaneRight),
         (&kb.toggle_sidebar, NavigateAction::ToggleSidebar),
+        (&kb.toggle_git_sidebar, NavigateAction::ToggleGitSidebar),
         (&kb.reload_config, NavigateAction::ReloadConfig),
         (
             &kb.open_notification_target,
@@ -1853,6 +1861,10 @@ pub(super) fn execute_navigate_action_in_context(
         NavigateAction::ToggleSidebar => {
             state.sidebar_collapsed = !state.sidebar_collapsed;
             leave_navigate_mode(state);
+        }
+        NavigateAction::ToggleGitSidebar => {
+            leave_navigate_mode(state);
+            state.toggle_git_sidebar_visibility();
         }
         NavigateAction::CyclePaneNext => {
             state.cycle_pane(false);

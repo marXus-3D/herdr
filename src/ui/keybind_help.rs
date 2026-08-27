@@ -152,6 +152,7 @@ pub(super) fn keybind_help_groups(app: &AppState) -> Vec<HelpGroup> {
         help_entry(keybind_label(&kb.resize_pane_up), "resize pane up"),
         help_entry(keybind_label(&kb.resize_pane_right), "resize pane right"),
         help_entry(keybind_label(&kb.toggle_sidebar), "toggle sidebar"),
+        help_entry(keybind_label(&kb.toggle_git_sidebar), "toggle git sidebar"),
         help_entry(keybind_label(&kb.focus_pane_left), "focus pane left"),
         help_entry(keybind_label(&kb.focus_pane_down), "focus pane down"),
         help_entry(keybind_label(&kb.focus_pane_up), "focus pane up"),

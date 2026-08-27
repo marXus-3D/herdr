@@ -76,6 +76,7 @@ impl App {
 
     pub(crate) fn request_git_identity_refresh(&mut self, now: Instant) {
         self.git_identity_refresh_requested = true;
+        self.state.git_sidebar_state.needs_force_refresh = true;
         self.mark_git_status_refresh_due(now);
     }
 

@@ -1,8 +1,20 @@
 use ratatui::layout::Rect;
 
-use crate::app::state::{AppState, ViewLayout};
+use crate::app::git_sidebar::GitSidebarRow;
+use crate::app::state::{AppState, Mode, ViewLayout};
 
+use super::mouse::MouseAction;
 use super::ScrollbarClickTarget;
+
+/// Whether `(col, row)` lands inside `rect`.
+fn rect_contains(rect: Rect, col: u16, row: u16) -> bool {
+    rect.width > 0
+        && rect.height > 0
+        && col >= rect.x
+        && col < rect.x + rect.width
+        && row >= rect.y
+        && row < rect.y + rect.height
+}
 
 impl AppState {
     pub(super) fn workspace_list_rect(&self) -> Rect {
@@ -264,12 +276,228 @@ impl AppState {
             && row < rect.y + rect.height
     }
 
+    pub(super) fn on_git_sidebar_toggle(&self, col: u16, row: u16) -> bool {
+        let rect = if self.git_sidebar_closed {
+            crate::ui::collapsed_git_sidebar_toggle_rect(self.view.git_sidebar_rect)
+        } else {
+            crate::ui::expanded_git_sidebar_toggle_rect(self.view.git_sidebar_rect)
+        };
+        rect.width > 0
+            && col >= rect.x
+            && col < rect.x + rect.width
+            && row >= rect.y
+            && row < rect.y + rect.height
+    }
+
     pub(super) fn set_manual_sidebar_width(&mut self, divider_col: u16) {
         let sidebar = self.view.sidebar_rect;
         let width = divider_col.saturating_sub(sidebar.x).saturating_add(1);
         self.sidebar_width = width.clamp(self.sidebar_min_width, self.sidebar_max_width);
         self.sidebar_width_source = crate::app::state::SidebarWidthSource::Manual;
         self.mark_session_dirty();
+    }
+
+    /// The source-control panel's resize handle is its separator column — the
+    /// panel's own left edge, since it docks on the right.
+    pub(super) fn on_git_sidebar_divider(&self, col: u16, row: u16) -> bool {
+        if self.git_sidebar_closed {
+            return false;
+        }
+        let sidebar = self.view.git_sidebar_rect;
+        sidebar.width > 0
+            && col == sidebar.x
+            && row >= sidebar.y
+            && row < sidebar.y + sidebar.height
+            // The toggle chevron shares the bottom of the panel; let it win.
+            && !self.on_git_sidebar_toggle(col, row)
+    }
+
+    pub(super) fn set_manual_git_sidebar_width(&mut self, divider_col: u16) {
+        let sidebar = self.view.git_sidebar_rect;
+        let right_edge = sidebar.x + sidebar.width;
+        let width = right_edge.saturating_sub(divider_col);
+        self.git_sidebar_width =
+            width.clamp(self.git_sidebar_min_width, self.git_sidebar_max_width);
+        self.mark_session_dirty();
+    }
+
+    /// Open or close the source-control panel.
+    ///
+    /// State only: the runtime tick notices `needs_force_refresh` and starts the
+    /// probe, so this is safe to call from the headless input path too.
+    pub(crate) fn toggle_git_sidebar_visibility(&mut self) {
+        self.git_sidebar_closed = !self.git_sidebar_closed;
+        if self.git_sidebar_closed {
+            if self.mode == Mode::GitSidebar {
+                self.mode = if self.active.is_some() {
+                    Mode::Terminal
+                } else {
+                    Mode::Navigate
+                };
+            }
+        } else {
+            self.mode = Mode::GitSidebar;
+            self.git_sidebar_state.needs_force_refresh = true;
+        }
+        self.git_sidebar_state.pending_discard = None;
+        // A dropdown or a prompt belongs to a visible panel.
+        self.git_sidebar_state.menu = None;
+        self.git_sidebar_state.prompt = None;
+        self.mark_session_dirty();
+    }
+
+    /// Route a left click inside the source-control panel.
+    ///
+    /// Row hit-testing reads `view.git_sidebar_rows`, which `compute_view`
+    /// filled from the same geometry the renderer used.
+    pub(super) fn handle_git_sidebar_click(&mut self, col: u16, row: u16) -> Option<MouseAction> {
+        if self.git_sidebar_closed {
+            return None;
+        }
+        let area = self.view.git_sidebar_rect;
+        let layout = crate::ui::git_sidebar_layout(area);
+        self.mode = Mode::GitSidebar;
+        // Any click cancels a pending discard, except the second click on the
+        // same discard icon — that arm restores it below.
+        let armed_discard = self.git_sidebar_state.pending_discard.take();
+
+        // Action bar: the buttons own their row outright.
+        if let Some((button, _)) = crate::ui::git_sidebar_button_rects(layout.actions)
+            .into_iter()
+            .find(|(_, rect)| rect_contains(*rect, col, row))
+        {
+            return Some(MouseAction::GitSidebarButtonPressed(button));
+        }
+
+        // Commit message box: focus it and drop the caret where it was clicked.
+        if rect_contains(layout.message_box, col, row) {
+            let input = layout.message_input;
+            self.git_sidebar_state.focus_message();
+            if input.width > 0 && row == input.y {
+                let offset = usize::from(col.saturating_sub(input.x));
+                let cursor = self
+                    .git_sidebar_state
+                    .commit_message
+                    .char_indices()
+                    .nth(offset)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(self.git_sidebar_state.commit_message.len());
+                self.git_sidebar_state.commit_cursor = cursor;
+            }
+            return None;
+        }
+
+        let track = crate::ui::git_sidebar_scrollbar_rect(&self.git_sidebar_state, area);
+        let metrics = crate::ui::git_sidebar_scroll_metrics(&self.git_sidebar_state, layout.list);
+        if let Some(track) = track.filter(|track| rect_contains(*track, col, row)) {
+            let offset_from_bottom = crate::ui::scrollbar_offset_from_row(metrics, track, row);
+            self.git_sidebar_state.scroll = metrics
+                .max_offset_from_bottom
+                .saturating_sub(offset_from_bottom);
+            return None;
+        }
+
+        let hit = self
+            .view
+            .git_sidebar_rows
+            .iter()
+            .find(|row_area| rect_contains(row_area.rect, col, row))
+            .copied();
+        let Some(hit) = hit else {
+            self.git_sidebar_state.focus_list();
+            return None;
+        };
+
+        self.git_sidebar_state.focus_list();
+        match hit.row {
+            GitSidebarRow::SectionHeader(section) => {
+                self.git_sidebar_state.select_index(hit.index);
+                self.git_sidebar_state.toggle_collapsed(section);
+                None
+            }
+            GitSidebarRow::File { section, .. } => {
+                self.git_sidebar_state.select_index(hit.index);
+                let icon = crate::ui::git_row_icon_rects(section, hit.rect)
+                    .into_iter()
+                    .find(|(_, rect)| rect_contains(*rect, col, row))
+                    .map(|(icon, _)| icon);
+                match icon {
+                    // The status badge stays a stage/unstage target too, so a
+                    // narrow panel with no room for icons is still usable.
+                    Some(crate::ui::GitRowIcon::Stage | crate::ui::GitRowIcon::Unstage) => {
+                        Some(MouseAction::GitSidebarToggleStage)
+                    }
+                    Some(crate::ui::GitRowIcon::Discard) => {
+                        // Discarding takes two clicks; keep the first one's arm.
+                        self.git_sidebar_state.pending_discard = armed_discard;
+                        Some(MouseAction::GitSidebarDiscard)
+                    }
+                    None if col == hit.rect.x + 1 => Some(MouseAction::GitSidebarToggleStage),
+                    None => Some(MouseAction::GitSidebarOpenDiff),
+                }
+            }
+            GitSidebarRow::Commit { .. } => {
+                self.git_sidebar_state.select_index(hit.index);
+                Some(MouseAction::GitSidebarOpenDiff)
+            }
+            GitSidebarRow::Placeholder => None,
+        }
+    }
+
+    /// Route a left click while a source-control dropdown is open.
+    ///
+    /// The dropdown is modal: a click anywhere else closes it rather than
+    /// falling through to whatever is underneath.
+    pub(super) fn handle_git_menu_click(&mut self, col: u16, row: u16) -> Option<MouseAction> {
+        let area = self.view.git_sidebar_rect;
+        let inside = self
+            .git_sidebar_state
+            .menu
+            .as_ref()
+            .is_some_and(|menu| crate::ui::git_menu_contains(area, menu, col, row));
+        if !inside {
+            self.git_sidebar_state.menu = None;
+            return None;
+        }
+
+        let hit = self
+            .git_sidebar_state
+            .menu
+            .as_ref()
+            .and_then(|menu| crate::ui::git_menu_row_at(area, menu, col, row));
+        let index = hit?;
+        let menu = self.git_sidebar_state.menu.as_mut()?;
+        menu.select_visible(index);
+        // Only a row that can actually run anything reports back; clicking the
+        // filter line or a rule just moves the cursor.
+        menu.selected_item()
+            .is_some_and(|item| item.is_selectable())
+            .then_some(MouseAction::GitSidebarMenuActivate)
+    }
+
+    /// Route a right click inside the source-control panel: it opens the
+    /// dropdown for the row under the pointer.
+    pub(super) fn handle_git_sidebar_right_click(
+        &mut self,
+        col: u16,
+        row: u16,
+    ) -> Option<MouseAction> {
+        if self.git_sidebar_closed {
+            return None;
+        }
+        self.mode = Mode::GitSidebar;
+        self.git_sidebar_state.pending_discard = None;
+        if let Some(hit) = self
+            .view
+            .git_sidebar_rows
+            .iter()
+            .find(|row_area| rect_contains(row_area.rect, col, row))
+            .copied()
+        {
+            self.git_sidebar_state.focus_list();
+            self.git_sidebar_state.select_index(hit.index);
+        }
+        Some(MouseAction::GitSidebarRowMenu)
     }
 
     pub(super) fn on_sidebar_section_divider(&self, col: u16, row: u16) -> bool {

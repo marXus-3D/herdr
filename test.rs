@@ -1,0 +1,1 @@
+use std::process::Command; fn main() { let out = Command::new("git").args(&["log", "-n", "2", "--graph", "--pretty=format:%h|%s|%an|%cr", "--abbrev-commit"]).output().unwrap(); println!("stdout: {}", String::from_utf8_lossy(&out.stdout)); }

@@ -60,6 +60,12 @@ impl App {
 
     pub(crate) fn handle_internal_event_with_render_impact(&mut self, ev: AppEvent) -> bool {
         match ev {
+            AppEvent::GitSidebarRefreshComplete(snapshot) => {
+                self.handle_git_sidebar_refresh_complete(*snapshot)
+            }
+            AppEvent::GitSidebarActionComplete { error, message } => {
+                self.handle_git_sidebar_action_complete(error, message)
+            }
             AppEvent::GitStatusRefreshed {
                 results,
                 cache_updates,
